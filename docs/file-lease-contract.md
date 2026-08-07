@@ -40,6 +40,8 @@ Covered invariants:
 - authenticated internal access;
 - malformed-success-envelope rejection;
 - timeout classification;
+- caller cancellation distinguished from transport failure;
+- response-body read failures normalized into bounded contract errors;
 - secret-safe errors.
 
 This lane proves the client and scenario logic. It does not claim that a deployed control plane, PostgreSQL, or Fiducia node was exercised.
