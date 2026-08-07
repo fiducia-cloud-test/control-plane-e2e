@@ -6,6 +6,7 @@ on:
       - '.github/workflows/file-lease-contract.yml'
       - 'src/file-lease-client.mjs'
       - 'test/file-lease-contract.test.mjs'
+      - 'test/file-lease-client-failures.test.mjs'
       - 'scripts/run-file-lease-contract.mjs'
       - 'docs/file-lease-contract.md'
   push:
@@ -14,6 +15,7 @@ on:
       - '.github/workflows/file-lease-contract.yml'
       - 'src/file-lease-client.mjs'
       - 'test/file-lease-contract.test.mjs'
+      - 'test/file-lease-client-failures.test.mjs'
       - 'scripts/run-file-lease-contract.mjs'
       - 'docs/file-lease-contract.md'
   workflow_dispatch:
@@ -45,10 +47,11 @@ jobs:
         run: |
           node --check src/file-lease-client.mjs
           node --check test/file-lease-contract.test.mjs
+          node --check test/file-lease-client-failures.test.mjs
           node --check scripts/run-file-lease-contract.mjs
 
       - name: Run deterministic contract tests
-        run: node --test test/file-lease-contract.test.mjs
+        run: node --test test/*.test.mjs
 
   live-contract:
     if: ${{ github.event_name == 'workflow_dispatch' && vars.ENABLE_CONTROL_PLANE_LIVE_E2E == 'true' }}
