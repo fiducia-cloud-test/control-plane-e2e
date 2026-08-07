@@ -137,15 +137,20 @@ export class FileLeaseClient {
         signal: combinedSignal,
       });
     } catch (error) {
-      const timedOut = timeoutSignal.aborted && !(signal?.aborted);
-      throw new FileLeaseContractError(
-        timedOut ? 'request-timeout' : 'transport-failed',
-        timedOut ? `request exceeded ${this.timeoutMs}ms` : 'request transport failed',
-        { cause: error },
-      );
+      throw requestFailure(error, { signal, timeoutSignal, timeoutMs: this.timeoutMs });
     }
 
-    const text = await response.text();
+    let text;
+    try {
+      text = await response.text();
+    } catch (error) {
+      throw requestFailure(error, {
+        signal,
+        timeoutSignal,
+        timeoutMs: this.timeoutMs,
+        responsePhase: true,
+      });
+    }
     let envelope = null;
     if (text.trim() !== '') {
       try {
@@ -175,6 +180,25 @@ export class FileLeaseClient {
       status: response.status,
     });
   }
+}
+
+function requestFailure(error, { signal, timeoutSignal, timeoutMs, responsePhase = false }) {
+  const timedOut = timeoutSignal.aborted && !(signal?.aborted);
+  if (timedOut) {
+    return new FileLeaseContractError('request-timeout', `request exceeded ${timeoutMs}ms`, {
+      cause: error,
+    });
+  }
+  if (signal?.aborted) {
+    return new FileLeaseContractError('request-cancelled', 'request was cancelled by the caller', {
+      cause: error,
+    });
+  }
+  return new FileLeaseContractError(
+    responsePhase ? 'response-read-failed' : 'transport-failed',
+    responsePhase ? 'response body could not be read' : 'request transport failed',
+    { cause: error },
+  );
 }
 
 function normalizeBaseUrl(value) {
