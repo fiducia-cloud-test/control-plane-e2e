@@ -1,0 +1,97 @@
+name: AI agent bridge published image smoke
+
+on:
+  pull_request:
+    paths:
+      - ai-agent-bridge-image-contract.json
+      - scripts/test-ai-agent-bridge-image.sh
+      - docs/ai-agent-bridge-published-image-smoke.md
+      - .github/workflows/ai-agent-bridge-published-image-smoke.yml
+  push:
+    branches: [main]
+    paths:
+      - ai-agent-bridge-image-contract.json
+      - scripts/test-ai-agent-bridge-image.sh
+      - docs/ai-agent-bridge-published-image-smoke.md
+      - .github/workflows/ai-agent-bridge-published-image-smoke.yml
+  schedule:
+    - cron: '17 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: ai-agent-bridge-published-image-smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: Immutable publication and safety contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/ai-agent-bridge-published-image-smoke.yml
+
+      - name: Validate immutable publication contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e '
+            .schema_version == 1 and
+            .source_repository == "ORESoftware/ai-agent-bridge.rs" and
+            .source_revision == "d4ade93a01f79b0347e36c48e6d26b236f83f011" and
+            .source_pull_request == 129 and
+            .publication_workflow_run_id == 31278723389 and
+            .publication_workflow_run_attempt == 1 and
+            .publication_evidence_artifact_id == 9027829619 and
+            .publication_evidence_artifact_digest == "sha256:c79b2446e545066e135e2986bbeeb1c7d96ccfa8fea51e4d2a1a3ef26802b60f" and
+            .image == "ghcr.io/oresoftware/fiducia-ai-agent-bridge" and
+            .image_digest == "sha256:ae33efed64f8cf41741c8cd1b75f2c1a2a3ad130594b5a2f4abebfc4589f22f0" and
+            .image_ref == (.image + "@" + .image_digest) and
+            .expected_user == "nonroot:nonroot" and
+            .expected_entrypoint == "/usr/local/bin/fiducia-ai-agent-bridge" and
+            .credential_mode == "synthetic-only" and
+            .provider_calls == false and
+            .production_mutation == false and
+            (.security_properties | length) >= 8
+          ' ai-agent-bridge-image-contract.json >/dev/null
+          bash -n scripts/test-ai-agent-bridge-image.sh
+          git diff --check
+
+  published-image-smoke:
+    name: Exact OCI digest / HTTP, SSE, and TCP black-box smoke
+    needs: contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Verify runner dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker version
+          curl --version
+          jq --version
+          python3 --version
+
+      - name: Run exact published image smoke
+        shell: bash
+        run: bash scripts/test-ai-agent-bridge-image.sh

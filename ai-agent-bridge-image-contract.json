@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "source_repository": "ORESoftware/ai-agent-bridge.rs",
+  "source_revision": "d4ade93a01f79b0347e36c48e6d26b236f83f011",
+  "source_pull_request": 129,
+  "publication_workflow_run_id": 31278723389,
+  "publication_workflow_run_attempt": 1,
+  "publication_evidence_artifact_id": 9027829619,
+  "publication_evidence_artifact_digest": "sha256:c79b2446e545066e135e2986bbeeb1c7d96ccfa8fea51e4d2a1a3ef26802b60f",
+  "image": "ghcr.io/oresoftware/fiducia-ai-agent-bridge",
+  "image_digest": "sha256:ae33efed64f8cf41741c8cd1b75f2c1a2a3ad130594b5a2f4abebfc4589f22f0",
+  "image_ref": "ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:ae33efed64f8cf41741c8cd1b75f2c1a2a3ad130594b5a2f4abebfc4589f22f0",
+  "expected_user": "nonroot:nonroot",
+  "expected_entrypoint": "/usr/local/bin/fiducia-ai-agent-bridge",
+  "credential_mode": "synthetic-only",
+  "provider_calls": false,
+  "production_mutation": false,
+  "security_properties": [
+    "the exact digest is pulled and retains the reviewed source revision label",
+    "the runtime remains non-root with no default command after its fixed entrypoint",
+    "the container starts with a read-only root filesystem, all capabilities dropped, and no-new-privileges",
+    "only health and readiness remain unauthenticated while bridge data routes reject missing and invalid bearer values",
+    "authenticated HTTP registration, topic resolution, messaging, context, and streaming round-trip through the published image",
+    "oversized HTTP requests and reserved context namespaces fail closed",
+    "TCP permits unauthenticated ping only and requires the synthetic bearer before data operations",
+    "the synthetic bearer is absent from HTTP responses, TCP responses, and captured container logs"
+  ]
+}
