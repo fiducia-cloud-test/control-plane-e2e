@@ -46,6 +46,7 @@ export class AgentBridgeLeaseAdmission {
       throw new TypeError('now must be a function');
     }
     this.now = now;
+    this.fingerprintsByMessage = new Map();
     this.receiptsByMessage = new Map();
     this.lastSequenceByChannel = new Map();
     this.admittedEffects = 0;
@@ -61,16 +62,21 @@ export class AgentBridgeLeaseAdmission {
     }
 
     const fingerprint = sha256(stableJson(canonicalIntent));
+    const priorFingerprint = this.fingerprintsByMessage.get(canonicalIntent.message_id);
+    if (priorFingerprint && priorFingerprint !== fingerprint) {
+      return rejectionReceipt({
+        code: 'message-replay-conflict',
+        nowMs,
+        intent: canonicalIntent,
+        fingerprint,
+      });
+    }
+    if (!priorFingerprint) {
+      this.fingerprintsByMessage.set(canonicalIntent.message_id, fingerprint);
+    }
+
     const prior = this.receiptsByMessage.get(canonicalIntent.message_id);
     if (prior) {
-      if (prior.intent_fingerprint !== fingerprint) {
-        return rejectionReceipt({
-          code: 'message-replay-conflict',
-          nowMs,
-          intent: canonicalIntent,
-          fingerprint,
-        });
-      }
       return freezeReceipt({
         ...prior,
         replayed: true,
