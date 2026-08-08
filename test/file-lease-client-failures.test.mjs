@@ -51,3 +51,57 @@ test('response-body failures use a bounded contract error', async () => {
     (error) => expectContractError(error, 'response-read-failed'),
   );
 });
+
+test('declared oversized responses fail before their body is consumed', async () => {
+  let textCalls = 0;
+  const fetchImpl = async () => ({
+    status: 502,
+    headers: new Headers({ 'content-length': '65537' }),
+    body: null,
+    text: async () => {
+      textCalls += 1;
+      return 'not read';
+    },
+  });
+  const client = new FileLeaseClient({
+    baseUrl: 'https://control-plane.example',
+    internalSecret: SECRET,
+    fetchImpl,
+  });
+
+  await assert.rejects(
+    client.raw('/v1/file-leases'),
+    (error) => expectContractError(error, 'response-too-large'),
+  );
+  assert.equal(textCalls, 0);
+});
+
+test('chunked oversized responses are cancelled at the byte ceiling', async () => {
+  let cancelled = false;
+  let emittedChunks = 0;
+  const fetchImpl = async () => ({
+    status: 502,
+    headers: new Headers(),
+    body: new ReadableStream({
+      pull(controller) {
+        emittedChunks += 1;
+        controller.enqueue(new Uint8Array(32 * 1024));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    }),
+  });
+  const client = new FileLeaseClient({
+    baseUrl: 'https://control-plane.example',
+    internalSecret: SECRET,
+    fetchImpl,
+  });
+
+  await assert.rejects(
+    client.raw('/v1/file-leases'),
+    (error) => expectContractError(error, 'response-too-large'),
+  );
+  assert.equal(cancelled, true);
+  assert.equal(emittedChunks, 3);
+});
