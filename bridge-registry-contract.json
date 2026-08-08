@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "repository": "ORESoftware/ai-agent-bridge.rs",
+    "branch": "main",
+    "sha": "d4ade93a01f79b0347e36c48e6d26b236f83f011",
+    "path": "config/alex-main-agent.channels.json"
+  },
+  "expected": {
+    "registrySchemaVersion": 1,
+    "bindingCount": 15,
+    "workspaceId": "T01B3C83PMK",
+    "linearTeamKey": "DEN",
+    "principalUserIds": [
+      "U01AZNU2LJ2"
+    ],
+    "principalUserGroupIds": [],
+    "defaultAgentMode": "both-parallel",
+    "allowedAgentModes": [
+      "claude",
+      "chatgpt",
+      "both-parallel",
+      "both-sequential",
+      "review"
+    ],
+    "writePolicy": "draft_pull_request",
+    "budgetPolicy": {
+      "max_concurrent_runs": 4,
+      "max_runtime_secs": 900,
+      "max_tokens": 250000,
+      "max_spend_cents": 1000,
+      "max_retries": 2
+    },
+    "rejectedChannelIds": [
+      "C0BMB9GSSKY"
+    ],
+    "routes": [
+      {
+        "name": "hypesiege",
+        "channelId": "C0BMF6JDSHX",
+        "linearProjectId": "cd247cb1-870b-471e-89f6-9484df19e798",
+        "defaultRepository": "hypesiege/hypesiege-mcp-server.rs",
+        "repositoryAllowlist": [
+          "hypesiege/hypesiege-mcp-server.rs"
+        ]
+      },
+      {
+        "name": "shared-auth",
+        "channelId": "C0BMD90HED8",
+        "linearProjectId": "4bbe0ba4-d7f1-49ce-8f41-afd2cff6c2a2",
+        "defaultRepository": "shared-auth/shared-auth-mcp-server.rs",
+        "repositoryAllowlist": [
+          "shared-auth/shared-auth-mcp-server.rs"
+        ]
+      },
+      {
+        "name": "oresoftware-control-plane",
+        "channelId": "C0BKP2N3LG7",
+        "linearProjectId": "7abf8be2-ffa5-4507-bd09-43aa59ca8718",
+        "defaultRepository": "ORESoftware/ai-agent-bridge.rs",
+        "repositoryAllowlist": [
+          "ORESoftware/ai-agent-bridge.rs",
+          "ORESoftware/ai-agent-coordinator.rs",
+          "ORESoftware/k8s-cluster"
+        ]
+      }
+    ]
+  }
+}
