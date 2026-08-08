@@ -55,6 +55,29 @@ This is also the executable AI-agent-bridge coordination path for the test suite
 the agents communicate through the same HTTP contract that external tools use.
 The bearer is a test-only workflow value and is never printed by the verifier.
 
+## Live coordinator exercise
+
+The workflow starts PostgreSQL 17, verifies the pinned canonical schema fixture
+by SHA-256, applies only that schema, and starts the pinned community coordinator
+with every optional external integration disabled. No model endpoint is called.
+The test then:
+
+1. reads coordinator discovery without credentials;
+2. proves a job route rejects an unauthenticated request;
+3. enqueues a job with an idempotency key;
+4. repeats the enqueue and proves the original job identity is returned;
+5. proves an unrelated organization filter cannot claim the job;
+6. claims the job with a bounded lease and checks its attempt counter;
+7. rejects heartbeat and completion from a different worker;
+8. renews the lease from the owning worker;
+9. completes the job successfully and clears lease ownership;
+10. reads back the exact terminal result;
+11. proves an idempotent replay preserves the completed job;
+12. proves completed work cannot be claimed again.
+
+The job envelope is checked as an exact key set on every transition. This catches
+wire drift even when the database transition itself remains valid.
+
 ## Deliberate boundaries
 
 This lane does not deploy Cloudflare Workers, DNS, R2, or production services.
