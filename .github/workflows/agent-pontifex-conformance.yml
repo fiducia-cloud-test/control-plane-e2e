@@ -245,6 +245,7 @@ jobs:
           cargo run \
             --manifest-path sources/coordinator/Cargo.toml \
             --locked \
+            --bin ai-agent-coordinator \
             -- \
             --config "$config" \
             >"$RUNNER_TEMP/agent-pontifex-coordinator.log" 2>&1 &
