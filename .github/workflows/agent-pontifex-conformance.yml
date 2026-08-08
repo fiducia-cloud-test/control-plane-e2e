@@ -1,0 +1,151 @@
+name: Agent Pontifex conformance
+
+on:
+  pull_request:
+    paths:
+      - agent-pontifex-sources.json
+      - scripts/verify-agent-pontifex.py
+      - docs/agent-pontifex-conformance.md
+      - .github/workflows/agent-pontifex-conformance.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-pontifex-conformance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conformance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      BRIDGE_BEARER: test-only-agent-pontifex-bearer
+      BRIDGE_URL: http://127.0.0.1:18142
+    steps:
+      - name: Check out independent test harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check out pinned Agent Pontifex SDK
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: agent-pontifex/agent-sdk.rs
+          ref: 6a97c7d9e1cc83ca4976bcf45e63deac6bd32a61
+          path: sources/agent-sdk
+          persist-credentials: false
+
+      - name: Check out pinned community bridge
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: agent-pontifex/ai-agent-bridge.rs
+          ref: 2ad4b859c7dd1b43100eb12745f8dab6463ef7f6
+          path: sources/bridge
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Check out pinned community coordinator
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: agent-pontifex/ai-agent-coordinator.rs
+          ref: 7a3934c4d897ce2a6021ba9eef341663ba6fc8d0
+          path: sources/coordinator
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.97.0'
+          components: rustfmt, clippy
+
+      - name: Verify immutable source inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          manifest = json.loads(Path('agent-pontifex-sources.json').read_text(encoding='utf-8'))
+          expected = {
+              'sdk': ('agent-pontifex/agent-sdk.rs', '6a97c7d9e1cc83ca4976bcf45e63deac6bd32a61'),
+              'bridge': ('agent-pontifex/ai-agent-bridge.rs', '2ad4b859c7dd1b43100eb12745f8dab6463ef7f6'),
+              'coordinator': ('agent-pontifex/ai-agent-coordinator.rs', '7a3934c4d897ce2a6021ba9eef341663ba6fc8d0'),
+          }
+          for name, (repository, revision) in expected.items():
+              actual = manifest['sources'][name]
+              assert actual == {'repository': repository, 'revision': revision}, (name, actual)
+              observed = Path(f'sources/{"agent-sdk" if name == "sdk" else name}/.git')
+              assert observed.exists(), observed
+
+          coordinator_contract = Path('sources/coordinator/src/agent_pontifex.rs').read_text(encoding='utf-8')
+          assert 'agent-pontifex/agent-sdk.rs' in coordinator_contract
+          assert '6a97c7d9e1cc83ca4976bcf45e63deac6bd32a61' in coordinator_contract
+          print('immutable source inventory and coordinator SDK pin verified')
+          PY
+
+      - name: Validate shared and Fiducia discovery profiles
+        run: >-
+          python3 scripts/verify-agent-pontifex.py
+          --fixtures sources/agent-sdk/conformance
+
+      - name: Test canonical protocol and SDK crates
+        run: |
+          cargo fmt --manifest-path sources/agent-sdk/Cargo.toml --all -- --check
+          cargo clippy --manifest-path sources/agent-sdk/Cargo.toml --workspace --all-targets -- -D warnings
+          cargo test --manifest-path sources/agent-sdk/Cargo.toml --workspace
+
+      - name: Test the bridge in-memory core
+        run: cargo test --manifest-path sources/bridge/Cargo.toml --locked --lib --no-default-features
+
+      - name: Start authenticated community bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/agent-pontifex-bridge-state"
+          (
+            cd sources/bridge
+            HOST=127.0.0.1 \
+            HTTP_PORT=18142 \
+            TCP_PORT=18143 \
+            API_AUTH_BEARER="$BRIDGE_BEARER" \
+            AI_AGENT_BRIDGE_DIR="$RUNNER_TEMP/agent-pontifex-bridge-state" \
+            RUST_LOG=info \
+            cargo run --locked --bin fiducia-ai-agent-bridge \
+              >"$RUNNER_TEMP/agent-pontifex-bridge.log" 2>&1
+          ) &
+          echo "$!" > "$RUNNER_TEMP/agent-pontifex-bridge.pid"
+
+          for _ in $(seq 1 120); do
+            if curl --fail --silent --show-error "$BRIDGE_URL/healthz" >/dev/null; then
+              exit 0
+            fi
+            if ! kill -0 "$(cat "$RUNNER_TEMP/agent-pontifex-bridge.pid")" 2>/dev/null; then
+              cat "$RUNNER_TEMP/agent-pontifex-bridge.log" >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/agent-pontifex-bridge.log" >&2
+          exit 1
+
+      - name: Coordinate two agents through the live bridge
+        run: >-
+          python3 scripts/verify-agent-pontifex.py
+          --fixtures sources/agent-sdk/conformance
+          --bridge-url "$BRIDGE_URL"
+          --bridge-bearer "$BRIDGE_BEARER"
+
+      - name: Stop bridge and print diagnostics on failure
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if test -f "$RUNNER_TEMP/agent-pontifex-bridge.pid"; then
+            kill "$(cat "$RUNNER_TEMP/agent-pontifex-bridge.pid")" 2>/dev/null || true
+          fi
+          if test "${{ job.status }}" != success && test -f "$RUNNER_TEMP/agent-pontifex-bridge.log"; then
+            tail -n 300 "$RUNNER_TEMP/agent-pontifex-bridge.log"
+          fi
