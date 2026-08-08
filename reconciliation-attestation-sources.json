@@ -2,10 +2,10 @@
   "schema_version": "reconciliation-attestation-sources.v1",
   "project_registry": {
     "repository": "ORESoftware/project-registry",
-    "revision": "259ac1fe35afeb826ea92254e6c9889baa4011ae",
+    "revision": "a1a4ef86f68bb2917238677ea8e9b7a381205422",
     "path": "src/reconciliation-attestation.mjs",
     "vendored_path": "fixtures/project-registry/reconciliation-attestation.mjs",
-    "sha256": "afb2cf7f623b865ae456bc2ab7201a0d6a1a11f2ccbfa883d10c2b6acbc21736",
+    "sha256": "29e261c4c1448b02a02ae7fd07302bbf171a6216fa1430f2b8dd8df354ff208c",
     "transfer": "connector-verified-exact-copy"
   }
 }
