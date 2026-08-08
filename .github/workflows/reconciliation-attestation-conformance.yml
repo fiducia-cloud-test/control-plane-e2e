@@ -6,6 +6,7 @@ on:
       - reconciliation-attestation-sources.json
       - fixtures/project-registry/reconciliation-attestation.mjs
       - test/reconciliation-attestation-conformance.test.mjs
+      - test/reconciliation-attestation-trust-policy.test.mjs
       - docs/reconciliation-attestation-conformance.md
       - .github/workflows/reconciliation-attestation-conformance.yml
   push:
@@ -14,6 +15,7 @@ on:
       - reconciliation-attestation-sources.json
       - fixtures/project-registry/reconciliation-attestation.mjs
       - test/reconciliation-attestation-conformance.test.mjs
+      - test/reconciliation-attestation-trust-policy.test.mjs
       - docs/reconciliation-attestation-conformance.md
       - .github/workflows/reconciliation-attestation-conformance.yml
   workflow_dispatch:
@@ -58,8 +60,9 @@ jobs:
           node --version
           node --check fixtures/project-registry/reconciliation-attestation.mjs
           node --check test/reconciliation-attestation-conformance.test.mjs
+          node --check test/reconciliation-attestation-trust-policy.test.mjs
 
       - name: Run adversarial authority contract
         env:
           RECONCILIATION_ATTESTATION_MODULE: fixtures/project-registry/reconciliation-attestation.mjs
-        run: node --test test/reconciliation-attestation-conformance.test.mjs
+        run: node --test test/reconciliation-attestation-conformance.test.mjs test/reconciliation-attestation-trust-policy.test.mjs
