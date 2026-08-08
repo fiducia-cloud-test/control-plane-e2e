@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "testOrganization": "fiducia-cloud-test",
+  "testRepository": "control-plane-e2e",
+  "sources": {
+    "sdk": {
+      "repository": "agent-pontifex/agent-sdk.rs",
+      "revision": "6a97c7d9e1cc83ca4976bcf45e63deac6bd32a61"
+    },
+    "bridge": {
+      "repository": "agent-pontifex/ai-agent-bridge.rs",
+      "revision": "2ad4b859c7dd1b43100eb12745f8dab6463ef7f6"
+    },
+    "coordinator": {
+      "repository": "agent-pontifex/ai-agent-coordinator.rs",
+      "revision": "7a3934c4d897ce2a6021ba9eef341663ba6fc8d0"
+    }
+  },
+  "runtimeChecks": [
+    "credential-free discovery",
+    "application route authentication",
+    "agent registration",
+    "semantic channel resolution",
+    "cross-agent message publication",
+    "cross-agent message observation",
+    "monotonic message sequence"
+  ],
+  "staticChecks": [
+    "protocol version negotiation",
+    "deterministic capabilities",
+    "vendor extension namespaces",
+    "public descriptor credential safety",
+    "Fiducia job adapter boundary",
+    "Fiducia monotonic fencing declaration"
+  ]
+}
