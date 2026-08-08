@@ -6,10 +6,20 @@ import { FileLeaseClient, FileLeaseContractError } from '../src/file-lease-clien
 const SECRET = 'test-internal-secret';
 const REPOSITORY = 'fiducia-cloud/example.rs';
 
-function expectContractError(error, code) {
+function expectContractError(error, code, status = undefined) {
   assert.ok(error instanceof FileLeaseContractError, String(error));
   assert.equal(error.code, code);
+  if (status !== undefined) assert.equal(error.status, status);
   return true;
+}
+
+function jsonResponse(status, envelope) {
+  return {
+    status,
+    headers: new Headers(),
+    body: null,
+    text: async () => JSON.stringify(envelope),
+  };
 }
 
 test('caller cancellation is distinct from transport failure', async () => {
@@ -105,4 +115,73 @@ test('chunked oversized responses are cancelled at the byte ceiling', async () =
   assert.equal(cancelled, true);
   assert.ok(emittedChunks >= 3, `expected at least 3 chunks, got ${emittedChunks}`);
   assert.ok(emittedChunks <= 4, `stream read past one scheduler prefetch: ${emittedChunks} chunks`);
+});
+
+test('successful acquisition refuses an explicitly uncommitted authority response', async () => {
+  const client = new FileLeaseClient({
+    baseUrl: 'https://control-plane.example',
+    internalSecret: SECRET,
+    fetchImpl: async () =>
+      jsonResponse(201, {
+        committed: false,
+        result: {
+          output: {
+            acquired: true,
+            fencing_token: 41,
+            lease_expires_ms: 1_700_000_030_000,
+          },
+        },
+      }),
+  });
+
+  await assert.rejects(
+    client.acquire({
+      repository: REPOSITORY,
+      paths: ['src/lib.rs'],
+      agent_key: 'agent-a',
+      ttl_ms: 30_000,
+      wait: false,
+    }),
+    (error) => expectContractError(error, 'response-not-committed', 201),
+  );
+});
+
+test('successful reads refuse envelopes that omit commitment proof', async () => {
+  const client = new FileLeaseClient({
+    baseUrl: 'https://control-plane.example',
+    internalSecret: SECRET,
+    fetchImpl: async () =>
+      jsonResponse(200, {
+        result: {
+          output: {
+            found: true,
+            fencing_token: 42,
+          },
+        },
+      }),
+  });
+
+  await assert.rejects(
+    client.get({ repository: REPOSITORY, path: 'src/lib.rs' }),
+    (error) => expectContractError(error, 'response-not-committed', 200),
+  );
+});
+
+test('committed success envelopes remain accepted', async () => {
+  const client = new FileLeaseClient({
+    baseUrl: 'https://control-plane.example',
+    internalSecret: SECRET,
+    fetchImpl: async () =>
+      jsonResponse(200, {
+        committed: true,
+        result: {
+          output: {
+            found: false,
+          },
+        },
+      }),
+  });
+
+  const result = await client.get({ repository: REPOSITORY, path: 'src/lib.rs' });
+  assert.equal(result.output.found, false);
 });
