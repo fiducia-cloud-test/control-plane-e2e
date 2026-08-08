@@ -356,3 +356,31 @@ test('invalid current time fails before any authority decision is created', () =
     assert.equal(gate.effectCount(), 0);
   }
 });
+
+test('a rejected valid intent reserves its message id against changed-payload reuse', () => {
+  const gate = harness();
+  rejected(
+    gate.evaluate({ intent: intent(), authority: authority({ committed: false }) }),
+    'authority-not-committed',
+  );
+  rejected(
+    gate.evaluate({
+      intent: intent({ payload_sha256: 'b'.repeat(64) }),
+      authority: authority(),
+    }),
+    'message-replay-conflict',
+  );
+  assert.equal(gate.effectCount(), 0);
+});
+
+test('the exact rejected intent may be retried after authority becomes committed', () => {
+  const gate = harness();
+  rejected(
+    gate.evaluate({ intent: intent(), authority: authority({ committed: false }) }),
+    'authority-not-committed',
+  );
+  const admitted = gate.evaluate({ intent: intent(), authority: authority() });
+  assert.equal(admitted.decision, 'admitted');
+  assert.equal(admitted.side_effect_permitted, true);
+  assert.equal(gate.effectCount(), 1);
+});
