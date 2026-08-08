@@ -32,7 +32,7 @@ A first valid intent produces an `admitted` receipt with `side_effect_permitted:
 
 An exact message replay returns the historical receipt with `replayed: true` and `side_effect_permitted: false`. It never authorizes a second side effect, even after the original lease has expired or a successor has taken over.
 
-The same message ID with any changed payload digest, job, agent, repository, paths, operation, lease, token, expiry, channel, or sequence is a replay conflict.
+The first validly shaped intent reserves its message ID before authority evaluation. When the authority snapshot is temporarily missing or uncommitted, the exact same intent may be retried later. The same message ID with any changed payload digest, job, agent, repository, paths, operation, lease, token, expiry, channel, or sequence is always a replay conflict, including after an earlier rejection.
 
 New out-of-order messages on the same bridge channel are rejected. Sequence protects delivery order; it still does not mint authority.
 
@@ -52,11 +52,12 @@ The deterministic test suite proves the adapter state machine and adversarial ca
 
 1. Receive an authenticated Agent Pontifex message or claimed coordinator job.
 2. Canonicalize the repository and requested union path set.
-3. Read a committed Fiducia authority snapshot for the complete union.
-4. Build and evaluate the admission envelope.
-5. Execute only when the receipt is new, admitted, and explicitly permits one side effect.
-6. Persist the receipt alongside the downstream mutation receipt.
-7. Reconcile completion using both receipts; never infer success from message delivery alone.
+3. Reserve the validly shaped message identity against changed-payload reuse.
+4. Read a committed Fiducia authority snapshot for the complete union.
+5. Build and evaluate the admission envelope.
+6. Execute only when the receipt is new, admitted, and explicitly permits one side effect.
+7. Persist the receipt alongside the downstream mutation receipt.
+8. Reconcile completion using both receipts; never infer success from message delivery alone.
 
 ## Pull-request safety
 
