@@ -1,0 +1,50 @@
+name: Agent bridge lease admission
+
+on:
+  pull_request:
+    paths:
+      - src/agent-bridge-lease-admission.mjs
+      - src/file-lease-client.mjs
+      - test/agent-bridge-lease-admission.test.mjs
+      - docs/agent-bridge-lease-admission.md
+      - .github/workflows/agent-bridge-lease-admission.yml
+  push:
+    branches: [main]
+    paths:
+      - src/agent-bridge-lease-admission.mjs
+      - src/file-lease-client.mjs
+      - test/agent-bridge-lease-admission.test.mjs
+      - docs/agent-bridge-lease-admission.md
+      - .github/workflows/agent-bridge-lease-admission.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-bridge-lease-admission-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: Delivery, replay, and fencing admission contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Verify Node.js runtime
+        run: node --version
+
+      - name: Check contract syntax
+        run: |
+          node --check src/agent-bridge-lease-admission.mjs
+          node --check test/agent-bridge-lease-admission.test.mjs
+
+      - name: Run adversarial admission contract
+        run: node --test test/agent-bridge-lease-admission.test.mjs
