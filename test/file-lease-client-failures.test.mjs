@@ -103,5 +103,6 @@ test('chunked oversized responses are cancelled at the byte ceiling', async () =
     (error) => expectContractError(error, 'response-too-large'),
   );
   assert.equal(cancelled, true);
-  assert.equal(emittedChunks, 3);
+  assert.ok(emittedChunks >= 3, `expected at least 3 chunks, got ${emittedChunks}`);
+  assert.ok(emittedChunks <= 4, `stream read past one scheduler prefetch: ${emittedChunks} chunks`);
 });
