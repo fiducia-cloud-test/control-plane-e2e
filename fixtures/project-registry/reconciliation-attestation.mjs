@@ -1,5 +1,6 @@
 import {
   createHash,
+  createPublicKey,
   sign as cryptoSign,
   verify as cryptoVerify
 } from 'node:crypto';
@@ -14,6 +15,8 @@ const HEAD_SHA_PATTERN = /^[0-9a-f]{40}$/;
 const LINEAR_ISSUE_PATTERN = /^[A-Z][A-Z0-9]*-[1-9][0-9]*$/;
 const GITHUB_PULL_REQUEST_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+#[1-9][0-9]*$/;
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
+const PUBLIC_KEY_PEM_PATTERN = /^-----BEGIN PUBLIC KEY-----\r?\n[\s\S]+\r?\n-----END PUBLIC KEY-----\s*$/;
+const PRIVATE_KEY_PEM_PATTERN = /-----BEGIN (?:ENCRYPTED |RSA |EC |OPENSSH )?PRIVATE KEY-----/;
 const MAX_STRING_LENGTH = 16_384;
 const MAX_ARRAY_ITEMS = 128;
 const MAX_OBJECT_KEYS = 128;
@@ -72,36 +75,49 @@ function isPlainObject(value) {
   return prototype === Object.prototype || prototype === null;
 }
 
-function requirePlainObject(value, label) {
-  if (!isPlainObject(value)) fail(`${label} must be a plain object`);
+function requirePlainObject(value, label, code = 'invalid_attestation') {
+  if (!isPlainObject(value)) fail(`${label} must be a plain object`, code);
   return value;
 }
 
-function requireExactKeys(value, expected, label) {
-  const actual = Object.keys(requirePlainObject(value, label)).sort();
+function requireExactKeys(value, expected, label, code = 'invalid_attestation') {
+  const actual = Object.keys(requirePlainObject(value, label, code)).sort();
   const wanted = [...expected].sort();
   if (actual.length !== wanted.length || actual.some((key, index) => key !== wanted[index])) {
     const missing = wanted.filter((key) => !actual.includes(key));
     const unexpected = actual.filter((key) => !wanted.includes(key));
-    fail(`${label} key set is invalid; missing=${JSON.stringify(missing)}, unexpected=${JSON.stringify(unexpected)}`);
+    fail(
+      `${label} key set is invalid; missing=${JSON.stringify(missing)}, unexpected=${JSON.stringify(unexpected)}`,
+      code
+    );
   }
 }
 
-function requireNonEmptyString(value, label, maximumLength = MAX_STRING_LENGTH) {
+function requireNonEmptyString(
+  value,
+  label,
+  maximumLength = MAX_STRING_LENGTH,
+  code = 'invalid_attestation'
+) {
   if (typeof value !== 'string' || value.trim() === '' || value.length > maximumLength) {
-    fail(`${label} must be a non-empty string no longer than ${maximumLength} characters`);
+    fail(`${label} must be a non-empty string no longer than ${maximumLength} characters`, code);
   }
   return value;
 }
 
-function requireStringArray(value, label, { nonEmpty = true } = {}) {
+function requireStringArray(value, label, { nonEmpty = true, code = 'invalid_attestation' } = {}) {
   if (!Array.isArray(value) || value.length > MAX_ARRAY_ITEMS || (nonEmpty && value.length === 0)) {
-    fail(`${label} must be ${nonEmpty ? 'a non-empty' : 'an'} array with at most ${MAX_ARRAY_ITEMS} entries`);
+    fail(
+      `${label} must be ${nonEmpty ? 'a non-empty' : 'an'} array with at most ${MAX_ARRAY_ITEMS} entries`,
+      code
+    );
   }
   const normalized = value.map((item, index) =>
-    requireNonEmptyString(item, `${label}[${index}]`)
+    requireNonEmptyString(item, `${label}[${index}]`, MAX_STRING_LENGTH, code)
   );
-  if (new Set(normalized).size !== normalized.length) fail(`${label} must not contain duplicates`);
+  if (new Set(normalized).size !== normalized.length) {
+    fail(`${label} must not contain duplicates`, code);
+  }
   return normalized;
 }
 
@@ -192,7 +208,9 @@ function base64UrlDecode(value, label) {
   if (!BASE64URL_PATTERN.test(value)) fail(`${label} must use unpadded base64url encoding`);
   const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
   const padding = '='.repeat((4 - (normalized.length % 4)) % 4);
-  return Buffer.from(`${normalized}${padding}`, 'base64');
+  const decoded = Buffer.from(`${normalized}${padding}`, 'base64');
+  if (base64UrlEncode(decoded) !== value) fail(`${label} must use canonical base64url encoding`);
+  return decoded;
 }
 
 function unsignedAttestation(attestation) {
@@ -245,38 +263,139 @@ function validateAttestationShape(attestation) {
   return attestation;
 }
 
+function normalizeTrustedPublicKey(publicKeyPem, label) {
+  const value = requireNonEmptyString(
+    publicKeyPem,
+    label,
+    16_384,
+    'invalid_trust_policy'
+  );
+  if (PRIVATE_KEY_PEM_PATTERN.test(value)) {
+    fail(`${label} must not contain private-key material`, 'private_key_material');
+  }
+  if (!PUBLIC_KEY_PEM_PATTERN.test(value)) {
+    fail(`${label} must be an unencrypted SPKI PUBLIC KEY PEM`, 'invalid_trust_key');
+  }
+  let publicKey;
+  try {
+    publicKey = createPublicKey(value);
+  } catch {
+    fail(`${label} is not a parseable public key`, 'invalid_trust_key');
+  }
+  if (publicKey.type !== 'public' || publicKey.asymmetricKeyType !== 'ed25519') {
+    fail(`${label} must be an Ed25519 public key`, 'unsupported_trust_key');
+  }
+  const spkiDer = publicKey.export({ type: 'spki', format: 'der' });
+  return Object.freeze({
+    publicKey,
+    fingerprint: createHash('sha256').update(spkiDer).digest('hex')
+  });
+}
+
 function validateTrustPolicy(trustPolicy) {
-  requireExactKeys(trustPolicy, TRUST_POLICY_KEYS, 'trustPolicy');
+  requireExactKeys(
+    trustPolicy,
+    TRUST_POLICY_KEYS,
+    'trustPolicy',
+    'invalid_trust_policy'
+  );
   if (trustPolicy.schema_version !== TRUST_POLICY_SCHEMA_VERSION) {
-    fail(`trustPolicy.schema_version must be ${TRUST_POLICY_SCHEMA_VERSION}`, 'invalid_trust_policy');
+    fail(
+      `trustPolicy.schema_version must be ${TRUST_POLICY_SCHEMA_VERSION}`,
+      'invalid_trust_policy'
+    );
   }
   const requiredRoles = requireStringArray(
     trustPolicy.required_roles,
-    'trustPolicy.required_roles'
+    'trustPolicy.required_roles',
+    { code: 'invalid_trust_policy' }
   );
   const distinctFields = requireStringArray(
     trustPolicy.distinct_producer_fields,
-    'trustPolicy.distinct_producer_fields'
+    'trustPolicy.distinct_producer_fields',
+    { code: 'invalid_trust_policy' }
   );
   for (const field of distinctFields) {
     if (!PRODUCER_KEYS.includes(field)) {
-      fail(`trustPolicy.distinct_producer_fields contains unsupported field ${field}`, 'invalid_trust_policy');
+      fail(
+        `trustPolicy.distinct_producer_fields contains unsupported field ${field}`,
+        'invalid_trust_policy'
+      );
     }
   }
-  const keys = requirePlainObject(trustPolicy.keys, 'trustPolicy.keys');
-  if (Object.keys(keys).length === 0 || Object.keys(keys).length > MAX_OBJECT_KEYS) {
-    fail('trustPolicy.keys must contain at least one and at most 128 entries', 'invalid_trust_policy');
+
+  const keys = requirePlainObject(trustPolicy.keys, 'trustPolicy.keys', 'invalid_trust_policy');
+  const keyEntries = Object.entries(keys);
+  if (keyEntries.length === 0 || keyEntries.length > MAX_OBJECT_KEYS) {
+    fail(
+      'trustPolicy.keys must contain at least one and at most 128 entries',
+      'invalid_trust_policy'
+    );
   }
-  for (const [keyId, entry] of Object.entries(keys)) {
-    requireNonEmptyString(keyId, 'trustPolicy key id', 512);
-    requireExactKeys(entry, TRUST_KEY_KEYS, `trustPolicy.keys.${keyId}`);
-    requireNonEmptyString(entry.public_key_pem, `trustPolicy.keys.${keyId}.public_key_pem`, 16_384);
-    requireStringArray(entry.roles, `trustPolicy.keys.${keyId}.roles`);
-    requireNonEmptyString(entry.provider, `trustPolicy.keys.${keyId}.provider`, 128);
-    requireNonEmptyString(entry.trust_domain, `trustPolicy.keys.${keyId}.trust_domain`, 512);
-    requireStringArray(entry.task_types, `trustPolicy.keys.${keyId}.task_types`);
+
+  const normalizedKeys = {};
+  const fingerprints = new Map();
+  const authorizedRoles = new Set();
+  for (const [keyId, entry] of keyEntries) {
+    requireNonEmptyString(keyId, 'trustPolicy key id', 512, 'invalid_trust_policy');
+    requireExactKeys(
+      entry,
+      TRUST_KEY_KEYS,
+      `trustPolicy.keys.${keyId}`,
+      'invalid_trust_policy'
+    );
+    const roles = requireStringArray(entry.roles, `trustPolicy.keys.${keyId}.roles`, {
+      code: 'invalid_trust_policy'
+    });
+    for (const role of roles) authorizedRoles.add(role);
+    const provider = requireNonEmptyString(
+      entry.provider,
+      `trustPolicy.keys.${keyId}.provider`,
+      128,
+      'invalid_trust_policy'
+    );
+    const trustDomain = requireNonEmptyString(
+      entry.trust_domain,
+      `trustPolicy.keys.${keyId}.trust_domain`,
+      512,
+      'invalid_trust_policy'
+    );
+    const taskTypes = requireStringArray(
+      entry.task_types,
+      `trustPolicy.keys.${keyId}.task_types`,
+      { code: 'invalid_trust_policy' }
+    );
+    const normalizedKey = normalizeTrustedPublicKey(
+      entry.public_key_pem,
+      `trustPolicy.keys.${keyId}.public_key_pem`
+    );
+    const existingKeyId = fingerprints.get(normalizedKey.fingerprint);
+    if (existingKeyId !== undefined) {
+      fail(
+        `trustPolicy key ${keyId} aliases the same public key as ${existingKeyId}`,
+        'key_alias'
+      );
+    }
+    fingerprints.set(normalizedKey.fingerprint, keyId);
+    normalizedKeys[keyId] = Object.freeze({
+      roles: Object.freeze(roles),
+      provider,
+      trust_domain: trustDomain,
+      task_types: Object.freeze(taskTypes),
+      publicKey: normalizedKey.publicKey,
+      fingerprint: normalizedKey.fingerprint
+    });
   }
-  return { requiredRoles, distinctFields, keys };
+  for (const role of requiredRoles) {
+    if (!authorizedRoles.has(role)) {
+      fail(`trustPolicy has no key authorized for required role ${role}`, 'invalid_trust_policy');
+    }
+  }
+  return Object.freeze({
+    requiredRoles: Object.freeze(requiredRoles),
+    distinctFields: Object.freeze(distinctFields),
+    keys: Object.freeze(normalizedKeys)
+  });
 }
 
 export function createSignedAttestation({
@@ -311,18 +430,25 @@ export function createSignedAttestation({
     signature: ''
   };
   validateAttestationShape({ ...attestation, signature: 'AA' });
-  const signature = cryptoSign(
-    null,
-    Buffer.from(canonicalJson(unsignedAttestation(attestation)), 'utf8'),
-    privateKeyPem
-  );
+  let signature;
+  try {
+    signature = cryptoSign(
+      null,
+      Buffer.from(canonicalJson(unsignedAttestation(attestation)), 'utf8'),
+      privateKeyPem
+    );
+  } catch {
+    fail('privateKeyPem cannot sign this attestation', 'invalid_signing_key');
+  }
   return Object.freeze({ ...attestation, signature: base64UrlEncode(signature) });
 }
 
 function verifyOneAttestation(attestation, trustPolicy, expected, nowMilliseconds, options) {
   validateAttestationShape(attestation);
   const keyEntry = trustPolicy.keys[attestation.producer.key_id];
-  if (!keyEntry) fail(`attestation key is not trusted: ${attestation.producer.key_id}`, 'untrusted_key');
+  if (!keyEntry) {
+    fail(`attestation key is not trusted: ${attestation.producer.key_id}`, 'untrusted_key');
+  }
   if (!keyEntry.roles.includes(attestation.role)) {
     fail(`attestation key is not authorized for role ${attestation.role}`, 'unauthorized_role');
   }
@@ -351,9 +477,11 @@ function verifyOneAttestation(attestation, trustPolicy, expected, nowMillisecond
     fail('attestation is expired', 'attestation_expired');
   }
 
-  if (attestation.subject.kind !== expected.subject.kind ||
-      attestation.subject.id !== expected.subject.id ||
-      attestation.subject.revision_digest !== expected.subject.revision_digest) {
+  if (
+    attestation.subject.kind !== expected.subject.kind ||
+    attestation.subject.id !== expected.subject.id ||
+    attestation.subject.revision_digest !== expected.subject.revision_digest
+  ) {
     fail('attestation subject does not match the finalizer expectation', 'subject_mismatch');
   }
   if (attestation.policy_digest !== expected.policyDigest) {
@@ -367,7 +495,7 @@ function verifyOneAttestation(attestation, trustPolicy, expected, nowMillisecond
   const validSignature = cryptoVerify(
     null,
     Buffer.from(canonicalJson(unsignedAttestation(attestation)), 'utf8'),
-    keyEntry.public_key_pem,
+    keyEntry.publicKey,
     signature
   );
   if (!validSignature) fail('attestation signature is invalid', 'invalid_signature');
@@ -429,9 +557,11 @@ export function verifyIndependentAttestationSet(attestations, {
   return Object.freeze({
     subject: Object.freeze({ ...expectedSubject }),
     policyDigest: expectedPolicyDigest,
-    roles: Object.freeze(Object.fromEntries(
-      normalizedPolicy.requiredRoles.map((role) => [role, byRole.get(role)])
-    ))
+    roles: Object.freeze(
+      Object.fromEntries(
+        normalizedPolicy.requiredRoles.map((role) => [role, byRole.get(role)])
+      )
+    )
   });
 }
 
@@ -447,7 +577,9 @@ function requireLinearOpinionPayload(attestation, expectedSubject) {
     'confidence'
   ];
   requireExactKeys(payload, required, `${attestation.role} opinion payload`);
-  if (payload.issue_id !== expectedSubject.id) fail(`${attestation.role} opinion issue id is mismatched`);
+  if (payload.issue_id !== expectedSubject.id) {
+    fail(`${attestation.role} opinion issue id is mismatched`);
+  }
   if (payload.revision_digest !== expectedSubject.revision_digest) {
     fail(`${attestation.role} opinion revision digest is mismatched`);
   }
@@ -468,17 +600,20 @@ export function verifyLinearOpinionAttestations(attestations, options) {
   const verified = verifyIndependentAttestationSet(attestations, options);
   const chatgpt = verified.roles.chatgpt;
   const claude = verified.roles.claude;
-  if (!chatgpt || !claude) fail('Linear opinions require chatgpt and claude roles', 'role_set_mismatch');
-  if (chatgpt.provider !== 'openai') fail('chatgpt role must be produced by the openai provider');
-  if (claude.provider !== 'anthropic') fail('claude role must be produced by the anthropic provider');
+  if (!chatgpt || !claude) {
+    fail('Linear opinions require chatgpt and claude roles', 'role_set_mismatch');
+  }
+  if (chatgpt.provider !== 'openai') {
+    fail('chatgpt role must be produced by the openai provider', 'provider_mismatch');
+  }
+  if (claude.provider !== 'anthropic') {
+    fail('claude role must be produced by the anthropic provider', 'provider_mismatch');
+  }
   const chatgptPayload = requireLinearOpinionPayload(chatgpt, options.expectedSubject);
   const claudePayload = requireLinearOpinionPayload(claude, options.expectedSubject);
   return Object.freeze({
     ...verified,
-    opinions: Object.freeze({
-      chatgpt: chatgptPayload,
-      claude: claudePayload
-    }),
+    opinions: Object.freeze({ chatgpt: chatgptPayload, claude: claudePayload }),
     agrees: chatgptPayload.recommendation === claudePayload.recommendation
   });
 }
@@ -496,7 +631,9 @@ function requirePrDecisionPayload(attestation, expectedSubject, expectedHeadSha)
     'blockers'
   ];
   requireExactKeys(payload, required, `${attestation.role} PR decision payload`);
-  if (payload.pull_request !== expectedSubject.id) fail(`${attestation.role} PR identity is mismatched`);
+  if (payload.pull_request !== expectedSubject.id) {
+    fail(`${attestation.role} PR identity is mismatched`);
+  }
   if (payload.revision_digest !== expectedSubject.revision_digest) {
     fail(`${attestation.role} PR revision digest is mismatched`);
   }
@@ -527,7 +664,9 @@ export function evaluatePullRequestMergeAttestations(attestations, {
   const verified = verifyIndependentAttestationSet(attestations, verificationOptions);
   const readiness = verified.roles.readiness;
   const critic = verified.roles.critic;
-  if (!readiness || !critic) fail('PR merge decisions require readiness and critic roles', 'role_set_mismatch');
+  if (!readiness || !critic) {
+    fail('PR merge decisions require readiness and critic roles', 'role_set_mismatch');
+  }
   const readinessPayload = requirePrDecisionPayload(
     readiness,
     verificationOptions.expectedSubject,
