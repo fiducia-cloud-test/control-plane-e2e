@@ -107,9 +107,12 @@ def validate_descriptor(
     if any(not capability.startswith(expected_prefix) for capability in normalized):
         raise ConformanceError(f"capabilities must use the {expected_prefix!r} namespace")
 
-    extensions = descriptor.get("extensions")
+    # Empty extension maps are intentionally omitted by serde at runtime. Treat
+    # omission as an empty map for community implementations, while still
+    # rejecting a present non-object value and requiring Fiducia extensions.
+    extensions = descriptor.get("extensions", {})
     if not isinstance(extensions, dict):
-        raise ConformanceError("extensions must be an object")
+        raise ConformanceError("extensions must be an object when present")
     for key, nested in extensions.items():
         validate_identifier(key, "extension")
         if "." not in key:
