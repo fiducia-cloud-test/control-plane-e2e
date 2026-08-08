@@ -6,6 +6,7 @@ on:
       - src/agent-bridge-lease-admission.mjs
       - src/file-lease-client.mjs
       - test/agent-bridge-lease-admission.test.mjs
+      - test/agent-bridge-lifecycle.test.mjs
       - docs/agent-bridge-lease-admission.md
       - .github/workflows/agent-bridge-lease-admission.yml
   push:
@@ -14,6 +15,7 @@ on:
       - src/agent-bridge-lease-admission.mjs
       - src/file-lease-client.mjs
       - test/agent-bridge-lease-admission.test.mjs
+      - test/agent-bridge-lifecycle.test.mjs
       - docs/agent-bridge-lease-admission.md
       - .github/workflows/agent-bridge-lease-admission.yml
   workflow_dispatch:
@@ -27,7 +29,7 @@ concurrency:
 
 jobs:
   contract:
-    name: Delivery, replay, and fencing admission contract
+    name: Delivery, replay, fencing, and lifecycle admission contract
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -45,6 +47,10 @@ jobs:
         run: |
           node --check src/agent-bridge-lease-admission.mjs
           node --check test/agent-bridge-lease-admission.test.mjs
+          node --check test/agent-bridge-lifecycle.test.mjs
 
       - name: Run adversarial admission contract
-        run: node --test test/agent-bridge-lease-admission.test.mjs
+        run: |
+          node --test \
+            test/agent-bridge-lease-admission.test.mjs \
+            test/agent-bridge-lifecycle.test.mjs
