@@ -266,7 +266,7 @@ test('invalid repository, paths, ttl, agent, and zero fencing token are rejected
 test('client rejects malformed success envelopes instead of inventing authority', async () => {
   const server = http.createServer((request, response) => {
     response.writeHead(201, { 'content-type': 'application/json' });
-    response.end(JSON.stringify({ result: { output: { acquired: true } } }));
+    response.end(JSON.stringify({ committed: true, result: { output: { acquired: true } } }));
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
