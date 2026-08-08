@@ -154,6 +154,14 @@ export class FileLeaseClient {
         envelope = null;
       }
     }
+    const successful = response.status >= 200 && response.status < 300;
+    if (successful && envelope?.committed !== true) {
+      throw new FileLeaseContractError(
+        'response-not-committed',
+        `successful response did not prove commitment; status=${response.status}`,
+        { status: response.status },
+      );
+    }
     const output = envelope?.result?.output ?? null;
     return Object.freeze({
       status: response.status,
