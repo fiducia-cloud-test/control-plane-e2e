@@ -1,0 +1,292 @@
+name: Agent Pontifex conformance
+
+on:
+  pull_request:
+    paths:
+      - agent-pontifex-sources.json
+      - scripts/verify-agent-pontifex.py
+      - scripts/verify-agent-pontifex-coordinator.py
+      - docs/agent-pontifex-conformance.md
+      - .github/workflows/agent-pontifex-conformance.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-pontifex-conformance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conformance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: coordinator
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready --username postgres --dbname coordinator"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      BRIDGE_BEARER: test-only-agent-pontifex-bearer
+      BRIDGE_URL: http://127.0.0.1:18142
+      COORDINATOR_BEARER: test-only-agent-pontifex-coordinator-bearer
+      COORDINATOR_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/coordinator
+      COORDINATOR_URL: http://127.0.0.1:18080
+      RUST_BACKTRACE: '1'
+    steps:
+      - name: Check out independent test harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check out pinned Agent Pontifex SDK
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: agent-pontifex/agent-sdk.rs
+          ref: 6a97c7d9e1cc83ca4976bcf45e63deac6bd32a61
+          path: sources/agent-sdk
+          persist-credentials: false
+
+      - name: Check out pinned community bridge
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: agent-pontifex/ai-agent-bridge.rs
+          ref: 2ad4b859c7dd1b43100eb12745f8dab6463ef7f6
+          path: sources/bridge
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Check out pinned community coordinator
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: agent-pontifex/ai-agent-coordinator.rs
+          ref: 7a3934c4d897ce2a6021ba9eef341663ba6fc8d0
+          path: sources/coordinator
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.97.0'
+          components: rustfmt, clippy
+
+      - name: Verify immutable source inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          manifest = json.loads(Path('agent-pontifex-sources.json').read_text(encoding='utf-8'))
+          expected = {
+              'sdk': ('agent-pontifex/agent-sdk.rs', '6a97c7d9e1cc83ca4976bcf45e63deac6bd32a61'),
+              'bridge': ('agent-pontifex/ai-agent-bridge.rs', '2ad4b859c7dd1b43100eb12745f8dab6463ef7f6'),
+              'coordinator': ('agent-pontifex/ai-agent-coordinator.rs', '7a3934c4d897ce2a6021ba9eef341663ba6fc8d0'),
+          }
+          for name, (repository, revision) in expected.items():
+              actual = manifest['sources'][name]
+              assert actual == {'repository': repository, 'revision': revision}, (name, actual)
+              observed = Path(f'sources/{"agent-sdk" if name == "sdk" else name}/.git')
+              assert observed.exists(), observed
+
+          coordinator_contract = Path('sources/coordinator/src/agent_pontifex.rs').read_text(encoding='utf-8')
+          assert 'agent-pontifex/agent-sdk.rs' in coordinator_contract
+          assert '6a97c7d9e1cc83ca4976bcf45e63deac6bd32a61' in coordinator_contract
+          print('immutable source inventory and coordinator SDK pin verified')
+          PY
+
+      - name: Validate shared and Fiducia discovery profiles
+        run: >-
+          python3 scripts/verify-agent-pontifex.py
+          --fixtures sources/agent-sdk/conformance
+
+      - name: Test canonical protocol and SDK crates
+        run: |
+          cargo fmt --manifest-path sources/agent-sdk/Cargo.toml --all -- --check
+          cargo clippy --manifest-path sources/agent-sdk/Cargo.toml --workspace --all-targets -- -D warnings
+          cargo test --manifest-path sources/agent-sdk/Cargo.toml --workspace
+
+      - name: Test the bridge in-memory core
+        run: cargo test --manifest-path sources/bridge/Cargo.toml --locked --lib --no-default-features
+
+      - name: Test the coordinator public contract
+        run: >-
+          cargo test --manifest-path sources/coordinator/Cargo.toml
+          --locked agent_pontifex -- --nocapture
+
+      - name: Apply pinned canonical coordinator schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          schema="$GITHUB_WORKSPACE/sources/coordinator/tests/fixtures/ai_agent_coordinator.schema.sql"
+          test -f "$schema"
+          actual="$(sha256sum "$schema" | awk '{print $1}')"
+          expected=bb6162034600fe7e3f3566375f96c4624214566bc63cdb9c060aa875727eac87
+          test "$actual" = "$expected"
+          docker run --rm \
+            --network host \
+            --env PGPASSWORD=postgres \
+            --volume "$schema:/schema.sql:ro" \
+            postgres:17 \
+            psql \
+              --host 127.0.0.1 \
+              --username postgres \
+              --dbname coordinator \
+              --set ON_ERROR_STOP=1 \
+              --file /schema.sql
+
+      - name: Start authenticated community bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/agent-pontifex-bridge-state"
+          (
+            cd sources/bridge
+            HOST=127.0.0.1 \
+            HTTP_PORT=18142 \
+            TCP_PORT=18143 \
+            API_AUTH_BEARER="$BRIDGE_BEARER" \
+            AI_AGENT_BRIDGE_DIR="$RUNNER_TEMP/agent-pontifex-bridge-state" \
+            RUST_LOG=info \
+            cargo run --locked --bin fiducia-ai-agent-bridge \
+              >"$RUNNER_TEMP/agent-pontifex-bridge.log" 2>&1
+          ) &
+          echo "$!" > "$RUNNER_TEMP/agent-pontifex-bridge.pid"
+
+          for _ in $(seq 1 120); do
+            if curl --fail --silent --show-error "$BRIDGE_URL/healthz" >/dev/null; then
+              exit 0
+            fi
+            if ! kill -0 "$(cat "$RUNNER_TEMP/agent-pontifex-bridge.pid")" 2>/dev/null; then
+              cat "$RUNNER_TEMP/agent-pontifex-bridge.log" >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/agent-pontifex-bridge.log" >&2
+          exit 1
+
+      - name: Coordinate two agents through the live bridge
+        run: >-
+          python3 scripts/verify-agent-pontifex.py
+          --fixtures sources/agent-sdk/conformance
+          --bridge-url "$BRIDGE_URL"
+          --bridge-bearer "$BRIDGE_BEARER"
+
+      - name: Start PostgreSQL-backed community coordinator
+        shell: bash
+        run: |
+          set -euo pipefail
+          config="$RUNNER_TEMP/agent-pontifex-coordinator.yaml"
+          cat >"$config" <<'YAML'
+          server:
+            bind: 127.0.0.1:18080
+            max_concurrent_model_requests: 2
+          database:
+            url_env: AI_AGENT_COORDINATOR_DATABASE_URL
+          auth:
+            required: true
+            token_env: COORDINATOR_API_TOKEN
+          github:
+            webhook_secret_env: GITHUB_WEBHOOK_SECRET
+            issue_trigger_labels: [agent:run]
+            review_trigger_labels: [agent:review]
+            auto_enqueue_failed_workflows: false
+          workers:
+            default_org_concurrency: 2
+            default_repo_concurrency: 1
+          routing:
+            require_repository_context: false
+            default_order: [test-local]
+            task_orders: {}
+            fallbacks: {}
+          budgets:
+            default_org_daily_usd: 10.0
+            default_repo_daily_usd: 5.0
+          security:
+            max_request_bytes: 1048576
+            redact_secrets: true
+            deny_remote_when_secrets_cannot_be_redacted: true
+            restricted_requires_local: true
+          providers:
+            test-loopback:
+              kind: openai-compatible
+              base_url: http://127.0.0.1:19999/v1
+              trust: local
+              timeout_seconds: 1
+          models:
+            test-local:
+              provider: test-loopback
+              upstream_model: test-model
+              tier: local
+              input_cost_per_million_usd: 0.0
+              output_cost_per_million_usd: 0.0
+              task_types: ['*']
+          YAML
+
+          AI_AGENT_COORDINATOR_DATABASE_URL="$COORDINATOR_DATABASE_URL" \
+          COORDINATOR_API_TOKEN="$COORDINATOR_BEARER" \
+          GITHUB_WEBHOOK_SECRET=test-only-webhook-secret \
+          GITHUB_REPOSITORY_ADMIN_ENABLED=false \
+          LINEAR_DELIVERY_ENABLED=false \
+          TELEMETRY_AUTOMATION_ENABLED=false \
+          EMAIL_ATTENTION_ENABLED=false \
+          RUST_LOG=info \
+          cargo run \
+            --manifest-path sources/coordinator/Cargo.toml \
+            --locked \
+            --bin ai-agent-coordinator \
+            -- \
+            --config "$config" \
+            >"$RUNNER_TEMP/agent-pontifex-coordinator.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/agent-pontifex-coordinator.pid"
+
+          for _ in $(seq 1 180); do
+            if curl --fail --silent --show-error "$COORDINATOR_URL/readyz" >/dev/null; then
+              exit 0
+            fi
+            if ! kill -0 "$(cat "$RUNNER_TEMP/agent-pontifex-coordinator.pid")" 2>/dev/null; then
+              cat "$RUNNER_TEMP/agent-pontifex-coordinator.log" >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/agent-pontifex-coordinator.log" >&2
+          exit 1
+
+      - name: Exercise idempotent coordinator leases end to end
+        run: >-
+          python3 scripts/verify-agent-pontifex-coordinator.py
+          --url "$COORDINATOR_URL"
+          --bearer "$COORDINATOR_BEARER"
+
+      - name: Stop services and print diagnostics on failure
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          for service in bridge coordinator; do
+            pid_file="$RUNNER_TEMP/agent-pontifex-${service}.pid"
+            if test -f "$pid_file"; then
+              kill "$(cat "$pid_file")" 2>/dev/null || true
+            fi
+          done
+          if test "${{ job.status }}" != success; then
+            for service in bridge coordinator; do
+              log_file="$RUNNER_TEMP/agent-pontifex-${service}.log"
+              if test -f "$log_file"; then
+                echo "--- ${service} diagnostics ---"
+                tail -n 300 "$log_file"
+              fi
+            done
+          fi
