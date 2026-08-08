@@ -17,13 +17,24 @@
     }
   },
   "runtimeChecks": [
-    "credential-free discovery",
-    "application route authentication",
+    "credential-free bridge discovery",
+    "bridge application route authentication",
     "agent registration",
     "semantic channel resolution",
     "cross-agent message publication",
     "cross-agent message observation",
-    "monotonic message sequence"
+    "monotonic message sequence",
+    "credential-free coordinator discovery",
+    "coordinator application route authentication",
+    "PostgreSQL canonical schema",
+    "idempotent job creation",
+    "claim filter isolation",
+    "leased job claim",
+    "wrong-worker heartbeat rejection",
+    "lease heartbeat renewal",
+    "wrong-worker completion rejection",
+    "terminal job completion and readback",
+    "completed work exclusion from future claims"
   ],
   "staticChecks": [
     "protocol version negotiation",
