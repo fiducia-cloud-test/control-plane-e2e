@@ -3,7 +3,7 @@
   "source": {
     "repository": "ORESoftware/ai-agent-bridge.rs",
     "branch": "main",
-    "sha": "f94160d7b3c9c3b188d812938a537b7fcb2aaf8c",
+    "sha": "d4ade93a01f79b0347e36c48e6d26b236f83f011",
     "path": "config/alex-main-agent.channels.json"
   },
   "expected": {
