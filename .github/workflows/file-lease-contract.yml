@@ -1,0 +1,78 @@
+name: file-lease contract
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/file-lease-contract.yml'
+      - 'src/file-lease-client.mjs'
+      - 'test/file-lease-contract.test.mjs'
+      - 'test/file-lease-client-failures.test.mjs'
+      - 'scripts/run-file-lease-contract.mjs'
+      - 'docs/file-lease-contract.md'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/file-lease-contract.yml'
+      - 'src/file-lease-client.mjs'
+      - 'test/file-lease-contract.test.mjs'
+      - 'test/file-lease-client-failures.test.mjs'
+      - 'scripts/run-file-lease-contract.mjs'
+      - 'docs/file-lease-contract.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deterministic-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Check syntax
+        run: |
+          node --check src/file-lease-client.mjs
+          node --check test/file-lease-contract.test.mjs
+          node --check test/file-lease-client-failures.test.mjs
+          node --check scripts/run-file-lease-contract.mjs
+
+      - name: Run deterministic contract tests
+        run: node --test test/*.test.mjs
+
+  live-contract:
+    if: ${{ github.event_name == 'workflow_dispatch' && vars.ENABLE_CONTROL_PLANE_LIVE_E2E == 'true' }}
+    needs: deterministic-contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: control-plane-live-e2e
+    steps:
+      - name: Check out harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Run live control-plane contract
+        env:
+          CONTROL_PLANE_BASE_URL: ${{ vars.CONTROL_PLANE_BASE_URL }}
+          FIDUCIA_CONTROL_PLANE_SECRET: ${{ secrets.FIDUCIA_CONTROL_PLANE_SECRET }}
+        run: node scripts/run-file-lease-contract.mjs --require-live
