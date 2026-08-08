@@ -1,0 +1,58 @@
+name: Agent Pontifex worker authority
+
+on:
+  pull_request:
+    paths:
+      - scripts/run-agent-pontifex-worker-authority-conformance.sh
+      - .github/workflows/agent-pontifex-worker-authority-conformance.yml
+  push:
+    branches: [main]
+    paths:
+      - scripts/run-agent-pontifex-worker-authority-conformance.sh
+      - .github/workflows/agent-pontifex-worker-authority-conformance.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-pontifex-worker-authority-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  protected-worker-contract:
+    name: Credential-free protected worker contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      AGENT_PONTIFEX_SOURCE_REPOSITORY: agent-pontifex/ai-agent-coordinator.rs
+      AGENT_PONTIFEX_SOURCE_REF: fix/den-3157-worker-authority
+    steps:
+      - name: Check out without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Verify no sensitive runtime credentials are present
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in \
+            OPENAI_API_KEY \
+            ANTHROPIC_API_KEY \
+            LINEAR_API_KEY \
+            LINEAR_API_TOKEN \
+            GH_TOKEN \
+            GITHUB_TOKEN \
+            CLOUDFLARE_API_TOKEN \
+            AWS_ACCESS_KEY_ID \
+            AWS_SECRET_ACCESS_KEY
+          do
+            test -z "${!name:-}"
+          done
+
+      - name: Compile and run protected worker authority contract
+        shell: bash
+        run: bash scripts/run-agent-pontifex-worker-authority-conformance.sh
