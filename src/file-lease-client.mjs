@@ -1,4 +1,5 @@
 const MAX_ERROR_DETAIL = 512;
+const MAX_RESPONSE_BYTES = 64 * 1024;
 const DEFAULT_TIMEOUT_MS = 10_000;
 
 export class FileLeaseContractError extends Error {
@@ -140,17 +141,11 @@ export class FileLeaseClient {
       throw requestFailure(error, { signal, timeoutSignal, timeoutMs: this.timeoutMs });
     }
 
-    let text;
-    try {
-      text = await response.text();
-    } catch (error) {
-      throw requestFailure(error, {
-        signal,
-        timeoutSignal,
-        timeoutMs: this.timeoutMs,
-        responsePhase: true,
-      });
-    }
+    const text = await readResponseText(response, {
+      signal,
+      timeoutSignal,
+      timeoutMs: this.timeoutMs,
+    });
     let envelope = null;
     if (text.trim() !== '') {
       try {
@@ -180,6 +175,86 @@ export class FileLeaseClient {
       status: response.status,
     });
   }
+}
+
+async function readResponseText(response, { signal, timeoutSignal, timeoutMs }) {
+  const contentLength = response.headers?.get?.('content-length');
+  if (contentLength !== null && contentLength !== undefined && contentLength !== '') {
+    const declaredBytes = Number(contentLength);
+    if (Number.isFinite(declaredBytes) && declaredBytes > MAX_RESPONSE_BYTES) {
+      await cancelResponseBody(response);
+      throw responseTooLarge(response.status);
+    }
+  }
+
+  if (!response.body || typeof response.body.getReader !== 'function') {
+    let text;
+    try {
+      text = await response.text();
+    } catch (error) {
+      throw requestFailure(error, {
+        signal,
+        timeoutSignal,
+        timeoutMs,
+        responsePhase: true,
+      });
+    }
+    if (new TextEncoder().encode(text).byteLength > MAX_RESPONSE_BYTES) {
+      throw responseTooLarge(response.status);
+    }
+    return text;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let bytesRead = 0;
+  let text = '';
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
+      bytesRead += chunk.byteLength;
+      if (bytesRead > MAX_RESPONSE_BYTES) {
+        try {
+          await reader.cancel('response body exceeded byte limit');
+        } catch {
+          // The typed contract error below remains authoritative.
+        }
+        throw responseTooLarge(response.status);
+      }
+      text += decoder.decode(chunk, { stream: true });
+    }
+    text += decoder.decode();
+    return text;
+  } catch (error) {
+    if (error instanceof FileLeaseContractError) throw error;
+    throw requestFailure(error, {
+      signal,
+      timeoutSignal,
+      timeoutMs,
+      responsePhase: true,
+    });
+  } finally {
+    reader.releaseLock?.();
+  }
+}
+
+async function cancelResponseBody(response) {
+  if (!response.body || typeof response.body.cancel !== 'function') return;
+  try {
+    await response.body.cancel('declared response body exceeds byte limit');
+  } catch {
+    // Rejecting the oversized response is more important than cancellation diagnostics.
+  }
+}
+
+function responseTooLarge(status) {
+  return new FileLeaseContractError(
+    'response-too-large',
+    `response body exceeded ${MAX_RESPONSE_BYTES} bytes`,
+    { status },
+  );
 }
 
 function requestFailure(error, { signal, timeoutSignal, timeoutMs, responsePhase = false }) {
