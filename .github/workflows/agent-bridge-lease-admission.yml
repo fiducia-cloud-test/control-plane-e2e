@@ -7,6 +7,7 @@ on:
       - src/file-lease-client.mjs
       - test/agent-bridge-lease-admission.test.mjs
       - test/agent-bridge-lifecycle.test.mjs
+      - test/agent-bridge-state-machine.test.mjs
       - docs/agent-bridge-lease-admission.md
       - .github/workflows/agent-bridge-lease-admission.yml
   push:
@@ -16,6 +17,7 @@ on:
       - src/file-lease-client.mjs
       - test/agent-bridge-lease-admission.test.mjs
       - test/agent-bridge-lifecycle.test.mjs
+      - test/agent-bridge-state-machine.test.mjs
       - docs/agent-bridge-lease-admission.md
       - .github/workflows/agent-bridge-lease-admission.yml
   workflow_dispatch:
@@ -29,7 +31,7 @@ concurrency:
 
 jobs:
   contract:
-    name: ${{ matrix.os }} / delivery, replay, fencing, and lifecycle admission
+    name: ${{ matrix.os }} / delivery, replay, fencing, lifecycle, and state-machine admission
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
@@ -57,10 +59,12 @@ jobs:
           node --check src/agent-bridge-lease-admission.mjs
           node --check test/agent-bridge-lease-admission.test.mjs
           node --check test/agent-bridge-lifecycle.test.mjs
+          node --check test/agent-bridge-state-machine.test.mjs
 
       - name: Run adversarial admission contract
         shell: bash
         run: |
           node --test \
             test/agent-bridge-lease-admission.test.mjs \
-            test/agent-bridge-lifecycle.test.mjs
+            test/agent-bridge-lifecycle.test.mjs \
+            test/agent-bridge-state-machine.test.mjs
