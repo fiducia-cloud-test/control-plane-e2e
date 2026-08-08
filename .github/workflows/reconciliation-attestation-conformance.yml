@@ -1,0 +1,70 @@
+name: Reconciliation attestation authority
+
+on:
+  pull_request:
+    paths:
+      - reconciliation-attestation-sources.json
+      - test/reconciliation-attestation-conformance.test.mjs
+      - docs/reconciliation-attestation-conformance.md
+      - .github/workflows/reconciliation-attestation-conformance.yml
+  push:
+    branches: [main]
+    paths:
+      - reconciliation-attestation-sources.json
+      - test/reconciliation-attestation-conformance.test.mjs
+      - docs/reconciliation-attestation-conformance.md
+      - .github/workflows/reconciliation-attestation-conformance.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reconciliation-attestation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  authority-contract:
+    name: Independent opinion and merge authority contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Fetch immutable project-registry verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .artifacts/project-registry
+          revision="$(node -p "require('./reconciliation-attestation-sources.json').project_registry.revision")"
+          path="$(node -p "require('./reconciliation-attestation-sources.json').project_registry.path")"
+          expected="$(node -p "require('./reconciliation-attestation-sources.json').project_registry.sha256")"
+          test "${#revision}" -eq 40
+          test "${path}" = "src/reconciliation-attestation.mjs"
+          curl \
+            --fail \
+            --location \
+            --proto '=https' \
+            --tlsv1.2 \
+            --max-time 30 \
+            --retry 2 \
+            --retry-all-errors \
+            --output .artifacts/project-registry/reconciliation-attestation.mjs \
+            "https://raw.githubusercontent.com/ORESoftware/project-registry/${revision}/${path}"
+          printf '%s  %s\n' "${expected}" ".artifacts/project-registry/reconciliation-attestation.mjs" | sha256sum --check --strict
+
+      - name: Check syntax
+        run: |
+          node --version
+          node --check .artifacts/project-registry/reconciliation-attestation.mjs
+          node --check test/reconciliation-attestation-conformance.test.mjs
+
+      - name: Run adversarial authority contract
+        env:
+          RECONCILIATION_ATTESTATION_MODULE: .artifacts/project-registry/reconciliation-attestation.mjs
+        run: node --test test/reconciliation-attestation-conformance.test.mjs
