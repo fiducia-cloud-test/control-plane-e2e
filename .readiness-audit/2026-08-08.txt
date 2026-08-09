@@ -1,0 +1,5 @@
+GitHub readiness audit marker
+Date: 2026-08-08
+Scope: fiducia-cloud-test/control-plane-e2e
+Purpose: non-production branch/commit/PR/CI permission proof
+No credentials or production state are included.
