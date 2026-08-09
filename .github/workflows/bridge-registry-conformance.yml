@@ -1,0 +1,75 @@
+name: bridge registry conformance
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/bridge-registry-conformance.yml"
+      - "bridge-registry-contract.json"
+      - "docs/bridge-registry-conformance.md"
+      - "scripts/verify-bridge-registry-contract.mjs"
+      - "test/bridge-registry-contract.test.mjs"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/bridge-registry-conformance.yml"
+      - "bridge-registry-contract.json"
+      - "docs/bridge-registry-conformance.md"
+      - "scripts/verify-bridge-registry-contract.mjs"
+      - "test/bridge-registry-contract.test.mjs"
+  schedule:
+    - cron: "29 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Require the runner's supported Node runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --version
+          test "$(node -p 'Number(process.versions.node.split(".")[0]) >= 20')" = "true"
+
+      - name: Resolve the reviewed bridge main head without credentials
+        id: bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_sha="$(git ls-remote https://github.com/ORESoftware/ai-agent-bridge.rs.git refs/heads/main | cut -f1)"
+          [[ "${remote_sha}" =~ ^[0-9a-f]{40}$ ]]
+          echo "sha=${remote_sha}" >> "${GITHUB_OUTPUT}"
+
+      - name: Run hostile mutation tests
+        env:
+          BRIDGE_REMOTE_SHA: ${{ steps.bridge.outputs.sha }}
+        run: node --test test/bridge-registry-contract.test.mjs
+
+      - name: Fetch and verify the exact production registry
+        env:
+          BRIDGE_REMOTE_SHA: ${{ steps.bridge.outputs.sha }}
+          BRIDGE_REGISTRY_EVIDENCE: test-results/bridge-registry-evidence.json
+        run: node scripts/verify-bridge-registry-contract.mjs bridge-registry-contract.json
+
+      - name: Upload metadata-only conformance evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: bridge-registry-conformance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: test-results/bridge-registry-evidence.json
+          if-no-files-found: error
+          retention-days: 14

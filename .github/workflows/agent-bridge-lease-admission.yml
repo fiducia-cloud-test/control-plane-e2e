@@ -1,0 +1,70 @@
+name: Agent bridge lease admission
+
+on:
+  pull_request:
+    paths:
+      - src/agent-bridge-lease-admission.mjs
+      - src/file-lease-client.mjs
+      - test/agent-bridge-lease-admission.test.mjs
+      - test/agent-bridge-lifecycle.test.mjs
+      - test/agent-bridge-state-machine.test.mjs
+      - docs/agent-bridge-lease-admission.md
+      - .github/workflows/agent-bridge-lease-admission.yml
+  push:
+    branches: [main]
+    paths:
+      - src/agent-bridge-lease-admission.mjs
+      - src/file-lease-client.mjs
+      - test/agent-bridge-lease-admission.test.mjs
+      - test/agent-bridge-lifecycle.test.mjs
+      - test/agent-bridge-state-machine.test.mjs
+      - docs/agent-bridge-lease-admission.md
+      - .github/workflows/agent-bridge-lease-admission.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-bridge-lease-admission-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: ${{ matrix.os }} / delivery, replay, fencing, lifecycle, and state-machine admission
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - windows-2025
+          - macos-15
+    steps:
+      - name: Check out without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Verify Node.js runtime
+        shell: bash
+        run: node --version
+
+      - name: Check contract syntax
+        shell: bash
+        run: |
+          node --check src/agent-bridge-lease-admission.mjs
+          node --check test/agent-bridge-lease-admission.test.mjs
+          node --check test/agent-bridge-lifecycle.test.mjs
+          node --check test/agent-bridge-state-machine.test.mjs
+
+      - name: Run adversarial admission contract
+        shell: bash
+        run: |
+          node --test \
+            test/agent-bridge-lease-admission.test.mjs \
+            test/agent-bridge-lifecycle.test.mjs \
+            test/agent-bridge-state-machine.test.mjs
