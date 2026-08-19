@@ -1,15 +1,17 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "source": {
     "repository": "ORESoftware/ai-agent-bridge.rs",
     "branch": "main",
-    "sha": "d4ade93a01f79b0347e36c48e6d26b236f83f011",
-    "path": "config/alex-main-agent.channels.json"
+    "reviewedSha": "a8a5fe61c9cf5aa38e03999cbb322d0742611ddc",
+    "path": "config/alex-main-agent.channels.json",
+    "blobSha": "9868f1897e63c707b500f4a6537d4977c2f39017"
   },
   "expected": {
     "registrySchemaVersion": 1,
     "bindingCount": 15,
     "workspaceId": "T01B3C83PMK",
+    "linearTeamId": "eb8ab169-5afe-4b6f-9cab-3f2aa3e887dc",
     "linearTeamKey": "DEN",
     "principalUserIds": [
       "U01AZNU2LJ2"
@@ -36,12 +38,106 @@
     ],
     "routes": [
       {
+        "name": "3fa",
+        "channelId": "C0BL6BEDYFK",
+        "linearProjectId": "4aff8a2b-092b-40c8-8af6-820e1538c4a7",
+        "defaultRepository": "3FA-app/3FA-mcp-server.rs",
+        "repositoryAllowlist": [
+          "3FA-app/3FA-mcp-server.rs"
+        ]
+      },
+      {
+        "name": "cliptown",
+        "channelId": "C0BLYPGGFH6",
+        "linearProjectId": "83b03121-db08-4e34-a69f-99fd1c873ced",
+        "defaultRepository": "cliptown/cliptown-monorepo",
+        "repositoryAllowlist": [
+          "cliptown/cliptown-monorepo"
+        ]
+      },
+      {
+        "name": "benefactor",
+        "channelId": "C0BKP367N95",
+        "linearProjectId": "e1db74d7-4fa3-4580-851d-ca8fc8145127",
+        "defaultRepository": "benefactor-cc/benefactor-cc-mcp-server.rs",
+        "repositoryAllowlist": [
+          "benefactor-cc/benefactor-cc-mcp-server.rs",
+          "benefactor-cc/backend.rs",
+          "benefactor-cc/benefactor-sync",
+          "benefactor-cc/benefactor-interfaces",
+          "benefactor-cc/benefactor-e2e",
+          "benefactor-cc/benefactor-automations",
+          "benefactor-cc/benefactor-sendgrid-outreach",
+          "benefactor-cc/benefactor-monorepo",
+          "benefactor-cc/benefactor-lib",
+          "benefactor-cc/benefactor-clients",
+          "benefactor-cc/benefactor-cli",
+          "benefactor-cc/.github",
+          "ORESoftware/benefactor.cc",
+          "ORESoftware/k8s-cluster"
+        ]
+      },
+      {
+        "name": "athleto",
+        "channelId": "C0BLYPTPSFJ",
+        "linearProjectId": "0de9ab82-98b3-4c1d-950b-2020d80bbccc",
+        "defaultRepository": "athlet-o/athleto-mcp-server.rs",
+        "repositoryAllowlist": [
+          "athlet-o/athleto-mcp-server.rs"
+        ]
+      },
+      {
+        "name": "memebank",
+        "channelId": "C0BLYPLKETS",
+        "linearProjectId": "aa7e93aa-0921-4e60-8ec3-a0e4da1e9572",
+        "defaultRepository": "memebank/mbk-api",
+        "repositoryAllowlist": [
+          "memebank/mbk-api"
+        ]
+      },
+      {
+        "name": "scintilla",
+        "channelId": "C0BL4GDJHQA",
+        "linearProjectId": "f5da817a-9c48-48ff-abcd-c6dd21045c20",
+        "defaultRepository": "scintilla-run/scintilla-mcp-server.rs",
+        "repositoryAllowlist": [
+          "scintilla-run/scintilla-mcp-server.rs"
+        ]
+      },
+      {
+        "name": "quaestor-ledger",
+        "channelId": "C0BL4E85DGA",
+        "linearProjectId": "aced9d50-40ea-4634-9574-3a6afa49c4ad",
+        "defaultRepository": "quaestor-ledger/quaestor-ledger-mcp-server.rs",
+        "repositoryAllowlist": [
+          "quaestor-ledger/quaestor-ledger-mcp-server.rs"
+        ]
+      },
+      {
+        "name": "daedalus-fab",
+        "channelId": "C0BKP3DDDPZ",
+        "linearProjectId": "b0356cba-8865-40d9-82f4-48f39ca2e396",
+        "defaultRepository": "daedalus-fab/daedalus-fab-mcp-server.rs",
+        "repositoryAllowlist": [
+          "daedalus-fab/daedalus-fab-mcp-server.rs"
+        ]
+      },
+      {
         "name": "hypesiege",
         "channelId": "C0BMF6JDSHX",
         "linearProjectId": "cd247cb1-870b-471e-89f6-9484df19e798",
         "defaultRepository": "hypesiege/hypesiege-mcp-server.rs",
         "repositoryAllowlist": [
           "hypesiege/hypesiege-mcp-server.rs"
+        ]
+      },
+      {
+        "name": "streempilot",
+        "channelId": "C0BMB94FL86",
+        "linearProjectId": "3f5bd157-4424-42cc-94d0-0bed993cdc1d",
+        "defaultRepository": "StreemPilot/streempilot-mcp-server.rs",
+        "repositoryAllowlist": [
+          "StreemPilot/streempilot-mcp-server.rs"
         ]
       },
       {
@@ -54,6 +150,24 @@
         ]
       },
       {
+        "name": "opto-sync",
+        "channelId": "C0BMBARQ7N2",
+        "linearProjectId": "88c60373-3e46-4a12-8f10-907d239d48f8",
+        "defaultRepository": "opto-sync/syncer.rs",
+        "repositoryAllowlist": [
+          "opto-sync/syncer.rs"
+        ]
+      },
+      {
+        "name": "voxletra",
+        "channelId": "C0BMB9GPXC6",
+        "linearProjectId": "d45b6c31-6b98-467b-8440-e3c3480613fb",
+        "defaultRepository": "voxletra/vxl-api-server.rs",
+        "repositoryAllowlist": [
+          "voxletra/vxl-api-server.rs"
+        ]
+      },
+      {
         "name": "oresoftware-control-plane",
         "channelId": "C0BKP2N3LG7",
         "linearProjectId": "7abf8be2-ffa5-4507-bd09-43aa59ca8718",
@@ -62,6 +176,16 @@
           "ORESoftware/ai-agent-bridge.rs",
           "ORESoftware/ai-agent-coordinator.rs",
           "ORESoftware/k8s-cluster"
+        ]
+      },
+      {
+        "name": "fanwaave",
+        "channelId": "C0BN3FMEJGL",
+        "linearProjectId": "d765e227-5726-42c8-8643-a8bd9e5a9a8c",
+        "defaultRepository": "fanwaave/push-notification-server.rs",
+        "repositoryAllowlist": [
+          "fanwaave/push-notification-server.rs",
+          "fanwaave/.github"
         ]
       }
     ]
