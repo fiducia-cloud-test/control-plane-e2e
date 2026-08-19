@@ -65,8 +65,9 @@ jobs:
           test "${remote_ref}" = "refs/heads/main"
 
           repository="$(mktemp -d)"
-          trap 'rm -rf "${repository}"' EXIT
+          trap 'rm -rf "${repository}" 2>/dev/null || true' EXIT
           git -C "${repository}" init --quiet
+          git -C "${repository}" config gc.auto 0
           git -C "${repository}" remote add origin "${remote}"
           timeout 90s git -C "${repository}" fetch --quiet --no-tags origin refs/heads/main
           test "$(git -C "${repository}" rev-parse FETCH_HEAD)" = "${remote_sha}"
