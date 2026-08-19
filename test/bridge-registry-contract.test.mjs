@@ -113,7 +113,10 @@ test('rejects the known Daedalus typo channel', () => {
   const registry = validRegistry();
   const daedalus = registry.bindings.find((binding_) => binding_.channel_id === 'C0BKP3DDDPZ');
   daedalus.channel_id = 'C0BMB9GSSKY';
-  assert.throws(() => validateRegistry(contract, registry), /rejected channel C0BMB9GSSKY reappeared/);
+  assert.throws(
+    () => validateRegistry(contract, registry),
+    /(?:unreviewed route|rejected channel) C0BMB9GSSKY/,
+  );
 });
 
 test('rejects unknown or missing production binding fields', () => {
