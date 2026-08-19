@@ -6,6 +6,7 @@ on:
       - ".github/workflows/bridge-registry-conformance.yml"
       - "bridge-registry-contract.json"
       - "docs/bridge-registry-conformance.md"
+      - "scripts/strict-json.mjs"
       - "scripts/verify-bridge-registry-contract.mjs"
       - "test/bridge-registry-contract.test.mjs"
   push:
@@ -14,6 +15,7 @@ on:
       - ".github/workflows/bridge-registry-conformance.yml"
       - "bridge-registry-contract.json"
       - "docs/bridge-registry-conformance.md"
+      - "scripts/strict-json.mjs"
       - "scripts/verify-bridge-registry-contract.mjs"
       - "test/bridge-registry-contract.test.mjs"
   schedule:
@@ -45,23 +47,46 @@ jobs:
           node --version
           test "$(node -p 'Number(process.versions.node.split(".")[0]) >= 20')" = "true"
 
-      - name: Resolve the reviewed bridge main head without credentials
+      - name: Resolve and verify the current bridge source identity
         id: bridge
         shell: bash
+        env:
+          GIT_TERMINAL_PROMPT: "0"
         run: |
           set -euo pipefail
-          remote_sha="$(git ls-remote https://github.com/ORESoftware/ai-agent-bridge.rs.git refs/heads/main | cut -f1)"
+          remote="https://github.com/ORESoftware/ai-agent-bridge.rs.git"
+          reviewed_sha="$(node -p 'JSON.parse(require("fs").readFileSync("bridge-registry-contract.json", "utf8")).source.reviewedSha')"
+          source_path="$(node -p 'JSON.parse(require("fs").readFileSync("bridge-registry-contract.json", "utf8")).source.path')"
+
+          mapfile -t refs < <(timeout 20s git ls-remote "${remote}" refs/heads/main)
+          test "${#refs[@]}" -eq 1
+          read -r remote_sha remote_ref <<< "${refs[0]}"
           [[ "${remote_sha}" =~ ^[0-9a-f]{40}$ ]]
+          test "${remote_ref}" = "refs/heads/main"
+
+          repository="$(mktemp -d)"
+          trap 'rm -rf "${repository}"' EXIT
+          git -C "${repository}" init --quiet
+          git -C "${repository}" remote add origin "${remote}"
+          timeout 90s git -C "${repository}" fetch --quiet --no-tags origin refs/heads/main
+          test "$(git -C "${repository}" rev-parse FETCH_HEAD)" = "${remote_sha}"
+          git -C "${repository}" merge-base --is-ancestor "${reviewed_sha}" "${remote_sha}"
+          source_blob_sha="$(git -C "${repository}" rev-parse "${remote_sha}:${source_path}")"
+          [[ "${source_blob_sha}" =~ ^[0-9a-f]{40}$ ]]
+
           echo "sha=${remote_sha}" >> "${GITHUB_OUTPUT}"
+          echo "blob_sha=${source_blob_sha}" >> "${GITHUB_OUTPUT}"
 
       - name: Run hostile mutation tests
         env:
           BRIDGE_REMOTE_SHA: ${{ steps.bridge.outputs.sha }}
+          BRIDGE_REGISTRY_BLOB_SHA: ${{ steps.bridge.outputs.blob_sha }}
         run: node --test test/bridge-registry-contract.test.mjs
 
-      - name: Fetch and verify the exact production registry
+      - name: Fetch and verify the current production registry content
         env:
           BRIDGE_REMOTE_SHA: ${{ steps.bridge.outputs.sha }}
+          BRIDGE_REGISTRY_BLOB_SHA: ${{ steps.bridge.outputs.blob_sha }}
           BRIDGE_REGISTRY_EVIDENCE: test-results/bridge-registry-evidence.json
         run: node scripts/verify-bridge-registry-contract.mjs bridge-registry-contract.json
 
