@@ -28,19 +28,25 @@ jobs:
         with:
           toolchain: '1.97.0'
 
-      - name: Derive and emit reviewable lock candidate
+      - name: Derive reviewable lock candidate
+        id: derive
         shell: bash
         run: |
           set -euo pipefail
           cd bridge
-          if cargo metadata --locked --format-version 1 >/dev/null 2>&1; then
-            echo 'The committed bridge Cargo.lock is already current.'
-            sha256sum Cargo.lock
-            exit 0
+          if ! cargo metadata --locked --format-version 1 >/dev/null 2>&1; then
+            cargo generate-lockfile
           fi
-          cargo generate-lockfile
           cargo metadata --locked --format-version 1 >/dev/null
-          echo "BRIDGE_LOCK_SHA256=$(sha256sum Cargo.lock | awk '{print $1}')"
-          echo 'BEGIN_BRIDGE_CARGO_LOCK_BASE64'
-          base64 -w 76 Cargo.lock
-          echo 'END_BRIDGE_CARGO_LOCK_BASE64'
+          lock_sha="$(sha256sum Cargo.lock | awk '{print $1}')"
+          echo "sha256=${lock_sha}" >> "$GITHUB_OUTPUT"
+          echo "BRIDGE_LOCK_SHA256=${lock_sha}"
+
+      - name: Upload bridge Cargo.lock candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: agent-pontifex-bridge-cargo-lock-candidate
+          path: bridge/Cargo.lock
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
