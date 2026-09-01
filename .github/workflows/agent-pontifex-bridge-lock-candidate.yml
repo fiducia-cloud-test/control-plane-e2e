@@ -1,0 +1,46 @@
+name: Agent Pontifex bridge lock candidate
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/agent-pontifex-bridge-lock-candidate.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  derive-bridge-lock:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out pinned Rust bridge
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: agent-pontifex/ai-agent-bridge.rs
+          ref: 3bff8a3d6cb38613b4af8e020890edcbc1fa1384
+          path: bridge
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: '1.97.0'
+
+      - name: Derive and emit reviewable lock candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd bridge
+          if cargo metadata --locked --format-version 1 >/dev/null 2>&1; then
+            echo 'The committed bridge Cargo.lock is already current.'
+            sha256sum Cargo.lock
+            exit 0
+          fi
+          cargo generate-lockfile
+          cargo metadata --locked --format-version 1 >/dev/null
+          echo "BRIDGE_LOCK_SHA256=$(sha256sum Cargo.lock | awk '{print $1}')"
+          echo 'BEGIN_BRIDGE_CARGO_LOCK_BASE64'
+          base64 -w 76 Cargo.lock
+          echo 'END_BRIDGE_CARGO_LOCK_BASE64'
