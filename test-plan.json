@@ -27,21 +27,21 @@
       "fullName": "fiducia-cloud/fiducia-ai-agent-control-plane",
       "exists": true,
       "branch": "main",
-      "sha": "05253e565c86a234397b7fd620cd2cb1f2b8a05f",
+      "sha": "1ca5adc0a622e904a39f76e0b849d4c9bb30d274",
       "visibility": "private"
     },
     {
       "fullName": "fiducia-cloud/fiducia-operations-control-plane",
       "exists": true,
       "branch": "main",
-      "sha": "4edfe371023662a4f035836f3db69a01d0003085",
+      "sha": "db1fdb9312ab79757478cc15db226115aaf5a7d7",
       "visibility": "private"
     },
     {
       "fullName": "fiducia-cloud/fiducia-ai-agent-coordinator.rs",
       "exists": true,
       "branch": "main",
-      "sha": "4a72110988ba1d6ca21ae4d0eb0969f8f55eaf98",
+      "sha": "02e1c2e3488b87966ee7004372e58e56b5a2de44",
       "visibility": "private"
     }
   ],
@@ -51,6 +51,9 @@
     "immutableSourcePins": true,
     "pullRequestCredentials": false,
     "leastPrivilege": true,
-    "redactSecretsAndRawMedia": true
+    "redactSecretsAndRawMedia": true,
+    "protectedSourceIntegration": true,
+    "protectedSourceIntegrationStatus": "not-executed-unless-protected-lane-runs",
+    "productOverlayPreserved": true
   }
 }
