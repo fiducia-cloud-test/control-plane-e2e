@@ -1,0 +1,68 @@
+name: Reconciliation attestation authority
+
+on:
+  pull_request:
+    paths:
+      - reconciliation-attestation-sources.json
+      - fixtures/project-registry/reconciliation-attestation.mjs
+      - test/reconciliation-attestation-conformance.test.mjs
+      - test/reconciliation-attestation-trust-policy.test.mjs
+      - docs/reconciliation-attestation-conformance.md
+      - .github/workflows/reconciliation-attestation-conformance.yml
+  push:
+    branches: [main]
+    paths:
+      - reconciliation-attestation-sources.json
+      - fixtures/project-registry/reconciliation-attestation.mjs
+      - test/reconciliation-attestation-conformance.test.mjs
+      - test/reconciliation-attestation-trust-policy.test.mjs
+      - docs/reconciliation-attestation-conformance.md
+      - .github/workflows/reconciliation-attestation-conformance.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reconciliation-attestation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  authority-contract:
+    name: Independent opinion and merge authority contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Verify immutable vendored project-registry source
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision="$(node -p "require('./reconciliation-attestation-sources.json').project_registry.revision")"
+          source_path="$(node -p "require('./reconciliation-attestation-sources.json').project_registry.path")"
+          fixture="$(node -p "require('./reconciliation-attestation-sources.json').project_registry.vendored_path")"
+          expected="$(node -p "require('./reconciliation-attestation-sources.json').project_registry.sha256")"
+          transfer="$(node -p "require('./reconciliation-attestation-sources.json').project_registry.transfer")"
+          test "${#revision}" -eq 40
+          test "${source_path}" = "src/reconciliation-attestation.mjs"
+          test "${fixture}" = "fixtures/project-registry/reconciliation-attestation.mjs"
+          test "${transfer}" = "connector-verified-exact-copy"
+          printf '%s  %s\n' "${expected}" "${fixture}" | sha256sum --check --strict
+
+      - name: Check syntax
+        run: |
+          node --version
+          node --check fixtures/project-registry/reconciliation-attestation.mjs
+          node --check test/reconciliation-attestation-conformance.test.mjs
+          node --check test/reconciliation-attestation-trust-policy.test.mjs
+
+      - name: Run adversarial authority contract
+        env:
+          RECONCILIATION_ATTESTATION_MODULE: fixtures/project-registry/reconciliation-attestation.mjs
+        run: node --test test/reconciliation-attestation-conformance.test.mjs test/reconciliation-attestation-trust-policy.test.mjs
