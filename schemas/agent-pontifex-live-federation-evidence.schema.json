@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/fiducia-cloud-test/control-plane-e2e/blob/main/schemas/agent-pontifex-live-federation-evidence.schema.json",
+  "title": "Agent Pontifex live federation evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "suite",
+    "run_id",
+    "completed_at",
+    "bridge",
+    "coordinator",
+    "turns",
+    "sse_delivery"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "suite": { "const": "agent-pontifex.live-federation.v1" },
+    "run_id": {
+      "type": "string",
+      "pattern": "^apf-[0-9]+-[0-9a-f]{12}$"
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "bridge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transport", "channel", "message_sequences"],
+      "properties": {
+        "transport": { "const": "authenticated-rest-plus-sse" },
+        "channel": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "message_sequences": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "coordinator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transport", "provider_streaming", "explicit_route_selection"],
+      "properties": {
+        "transport": { "const": "openai-compatible-chat-completions" },
+        "provider_streaming": { "const": false },
+        "explicit_route_selection": { "const": true }
+      }
+    },
+    "turns": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "turn",
+          "agent_id",
+          "requested_label",
+          "provider",
+          "route_model",
+          "upstream_model",
+          "previous_seq",
+          "posted_seq",
+          "previous_sha256",
+          "provider_response_sha256",
+          "latency_ms"
+        ],
+        "properties": {
+          "turn": { "type": "integer", "minimum": 1, "maximum": 4 },
+          "agent_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+          },
+          "requested_label": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "provider": { "enum": ["xai", "google", "anthropic", "openai"] },
+          "route_model": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+          },
+          "upstream_model": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "previous_seq": { "type": "integer", "minimum": 1 },
+          "posted_seq": { "type": "integer", "minimum": 2 },
+          "previous_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "provider_response_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "latency_ms": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "sse_delivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["grok-4-6", "gemini-pro", "claude-opus-5", "chatgpt-sol"],
+      "properties": {
+        "grok-4-6": { "$ref": "#/$defs/sequences" },
+        "gemini-pro": { "$ref": "#/$defs/sequences" },
+        "claude-opus-5": { "$ref": "#/$defs/sequences" },
+        "chatgpt-sol": { "$ref": "#/$defs/sequences" }
+      }
+    }
+  },
+  "$defs": {
+    "sequences": {
+      "type": "array",
+      "minItems": 5,
+      "uniqueItems": true,
+      "items": { "type": "integer", "minimum": 1 }
+    }
+  }
+}

@@ -1,0 +1,360 @@
+name: Agent Pontifex live federation
+
+on:
+  pull_request:
+    paths:
+      - agent-pontifex-live-federation.json
+      - schemas/agent-pontifex-live-federation-evidence.schema.json
+      - scripts/agent_pontifex_live_common.py
+      - scripts/agent_pontifex_live_sse.py
+      - scripts/mock-openai-federation.py
+      - scripts/render-agent-pontifex-live-federation-config.py
+      - scripts/run-agent-pontifex-live-federation.sh
+      - scripts/run-agent-pontifex-live-ring.py
+      - docs/agent-pontifex-live-federation.md
+      - .github/workflows/agent-pontifex-live-federation.yml
+  push:
+    branches:
+      - main
+    paths:
+      - agent-pontifex-live-federation.json
+      - schemas/agent-pontifex-live-federation-evidence.schema.json
+      - scripts/agent_pontifex_live_common.py
+      - scripts/agent_pontifex_live_sse.py
+      - scripts/mock-openai-federation.py
+      - scripts/render-agent-pontifex-live-federation-config.py
+      - scripts/run-agent-pontifex-live-federation.sh
+      - scripts/run-agent-pontifex-live-ring.py
+      - docs/agent-pontifex-live-federation.md
+      - .github/workflows/agent-pontifex-live-federation.yml
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Credential-free mock certification or protected live-provider certification
+        type: choice
+        required: true
+        default: mock
+        options:
+          - mock
+          - live
+      live_confirmation:
+        description: For live mode, enter I_ACCEPT_PROVIDER_COSTS_AND_DATA_EGRESS
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-pontifex-live-federation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BRIDGE_REVISION: 3bff8a3d6cb38613b4af8e020890edcbc1fa1384
+  COORDINATOR_REVISION: 14a2bdae74ce694044434f0a9545f5a2c99f1a5d
+  RUST_TOOLCHAIN: '1.97.0'
+  BRIDGE_URL: http://127.0.0.1:18142
+  COORDINATOR_URL: http://127.0.0.1:18080
+  CARGO_TERM_COLOR: always
+
+jobs:
+  mock-four-agent-ring:
+    name: Mock four-agent ring through pinned Rust servers
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: coordinator
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready --username postgres --dbname coordinator"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      BRIDGE_BEARER: test-only-agent-pontifex-bridge-bearer
+      COORDINATOR_BEARER: test-only-agent-pontifex-coordinator-bearer
+      MOCK_PROVIDER_API_KEY: test-only-agent-pontifex-provider-key
+      AI_AGENT_COORDINATOR_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/coordinator
+      GITHUB_WEBHOOK_SECRET: test-only-agent-pontifex-webhook-secret
+    steps:
+      - name: Check out independent test harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check out pinned Rust bridge
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: agent-pontifex/ai-agent-bridge.rs
+          ref: ${{ env.BRIDGE_REVISION }}
+          path: sources/bridge
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Check out pinned Rust coordinator
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: agent-pontifex/ai-agent-coordinator.rs
+          ref: ${{ env.COORDINATOR_REVISION }}
+          path: sources/coordinator
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Verify immutable sources and credential-free admission
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in XAI_API_KEY GEMINI_API_KEY ANTHROPIC_API_KEY OPENAI_API_KEY; do
+            if [[ -n "${!name:-}" ]]; then
+              echo "provider credential unexpectedly present in pull-request lane: $name" >&2
+              exit 1
+            fi
+          done
+          python3 - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+
+          manifest = json.loads(Path('agent-pontifex-live-federation.json').read_text(encoding='utf-8'))
+          expected = {
+              'bridge': ('agent-pontifex/ai-agent-bridge.rs', '3bff8a3d6cb38613b4af8e020890edcbc1fa1384', 'sources/bridge'),
+              'coordinator': ('agent-pontifex/ai-agent-coordinator.rs', '14a2bdae74ce694044434f0a9545f5a2c99f1a5d', 'sources/coordinator'),
+          }
+          for name, (repository, revision, path) in expected.items():
+              assert manifest['sources'][name] == {'repository': repository, 'revision': revision}
+              observed = subprocess.check_output(
+                  ['git', '-C', path, 'rev-parse', 'HEAD'], text=True
+              ).strip()
+              assert observed == revision, (name, revision, observed)
+          print('immutable Agent Pontifex source pins verified')
+          PY
+
+      - name: Validate harness source and manifest
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/agent_pontifex_live_common.py \
+            scripts/agent_pontifex_live_sse.py \
+            scripts/mock-openai-federation.py \
+            scripts/render-agent-pontifex-live-federation-config.py \
+            scripts/run-agent-pontifex-live-ring.py
+          python3 -m json.tool agent-pontifex-live-federation.json >/dev/null
+          python3 -m json.tool schemas/agent-pontifex-live-federation-evidence.schema.json >/dev/null
+          bash -n scripts/run-agent-pontifex-live-federation.sh
+          python3 scripts/render-agent-pontifex-live-federation-config.py \
+            --manifest agent-pontifex-live-federation.json \
+            --mode mock \
+            --output "$RUNNER_TEMP/mock-coordinator-config.json"
+          python3 -m json.tool "$RUNNER_TEMP/mock-coordinator-config.json" >/dev/null
+
+      - name: Run authenticated four-agent federation
+        run: >-
+          bash scripts/run-agent-pontifex-live-federation.sh
+          mock
+          "$RUNNER_TEMP/agent-pontifex-live-federation-evidence.json"
+
+      - name: Publish redacted mock evidence summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/agent-pontifex-live-federation-evidence.json"
+          if [[ ! -f "$evidence" ]]; then
+            echo 'No federation evidence was produced.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          EVIDENCE_PATH="$evidence" python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          import os
+          from pathlib import Path
+
+          evidence = json.loads(Path(os.environ['EVIDENCE_PATH']).read_text(encoding='utf-8'))
+          print('## Credential-free four-agent federation')
+          print()
+          print(f"Run: `{evidence['run_id']}`")
+          print(f"Bridge sequences: `{evidence['bridge']['message_sequences']}`")
+          print()
+          print('| Turn | Agent | Provider | Route | Previous seq | Posted seq | Latency (ms) |')
+          print('|---:|---|---|---|---:|---:|---:|')
+          for turn in evidence['turns']:
+              print(
+                  f"| {turn['turn']} | `{turn['agent_id']}` | `{turn['provider']}` | "
+                  f"`{turn['route_model']}` | {turn['previous_seq']} | "
+                  f"{turn['posted_seq']} | {turn['latency_ms']} |"
+              )
+          print()
+          print('All four registered identities observed every bridge message over SSE.')
+          PY
+
+  live-provider-ring:
+    name: Protected live-provider ring
+    needs: mock-four-agent-ring
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'live'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: agent-provider-e2e
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: coordinator
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready --username postgres --dbname coordinator"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      BRIDGE_BEARER: test-only-agent-pontifex-live-bridge-bearer
+      COORDINATOR_BEARER: test-only-agent-pontifex-live-coordinator-bearer
+      AI_AGENT_COORDINATOR_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/coordinator
+      GITHUB_WEBHOOK_SECRET: test-only-agent-pontifex-live-webhook-secret
+      XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    steps:
+      - name: Enforce protected live admission
+        env:
+          LIVE_CONFIRMATION: ${{ inputs.live_confirmation }}
+          LIVE_ENABLED: ${{ vars.AGENT_PROVIDER_E2E_ENABLED }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != refs/heads/main ]]; then
+            echo 'live federation may run only from the default main branch' >&2
+            exit 1
+          fi
+          if [[ "$LIVE_ENABLED" != true ]]; then
+            echo 'repository variable AGENT_PROVIDER_E2E_ENABLED must equal true' >&2
+            exit 1
+          fi
+          if [[ "$LIVE_CONFIRMATION" != I_ACCEPT_PROVIDER_COSTS_AND_DATA_EGRESS ]]; then
+            echo 'live confirmation phrase did not match' >&2
+            exit 1
+          fi
+          for name in XAI_API_KEY GEMINI_API_KEY ANTHROPIC_API_KEY OPENAI_API_KEY; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "required protected provider credential is unset: $name" >&2
+              exit 1
+            fi
+          done
+          echo 'live federation admission passed; credential values remain undisclosed'
+
+      - name: Check out independent test harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check out pinned Rust bridge
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: agent-pontifex/ai-agent-bridge.rs
+          ref: ${{ env.BRIDGE_REVISION }}
+          path: sources/bridge
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Check out pinned Rust coordinator
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: agent-pontifex/ai-agent-coordinator.rs
+          ref: ${{ env.COORDINATOR_REVISION }}
+          path: sources/coordinator
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Verify immutable source inventory
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+
+          manifest = json.loads(Path('agent-pontifex-live-federation.json').read_text(encoding='utf-8'))
+          expected = {
+              'bridge': ('3bff8a3d6cb38613b4af8e020890edcbc1fa1384', 'sources/bridge'),
+              'coordinator': ('14a2bdae74ce694044434f0a9545f5a2c99f1a5d', 'sources/coordinator'),
+          }
+          for name, (revision, path) in expected.items():
+              assert manifest['sources'][name]['revision'] == revision
+              observed = subprocess.check_output(
+                  ['git', '-C', path, 'rev-parse', 'HEAD'], text=True
+              ).strip()
+              assert observed == revision, (name, revision, observed)
+          print('immutable Agent Pontifex source pins verified')
+          PY
+
+      - name: Validate and render live coordinator configuration
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/agent_pontifex_live_common.py \
+            scripts/agent_pontifex_live_sse.py \
+            scripts/render-agent-pontifex-live-federation-config.py \
+            scripts/run-agent-pontifex-live-ring.py
+          python3 -m json.tool agent-pontifex-live-federation.json >/dev/null
+          python3 -m json.tool schemas/agent-pontifex-live-federation-evidence.schema.json >/dev/null
+          bash -n scripts/run-agent-pontifex-live-federation.sh
+          python3 scripts/render-agent-pontifex-live-federation-config.py \
+            --manifest agent-pontifex-live-federation.json \
+            --mode live \
+            --output "$RUNNER_TEMP/live-coordinator-config.json"
+          python3 -m json.tool "$RUNNER_TEMP/live-coordinator-config.json" >/dev/null
+
+      - name: Run live four-provider federation
+        run: >-
+          bash scripts/run-agent-pontifex-live-federation.sh
+          live
+          "$RUNNER_TEMP/agent-pontifex-live-provider-evidence.json"
+
+      - name: Publish redacted live evidence summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/agent-pontifex-live-provider-evidence.json"
+          if [[ ! -f "$evidence" ]]; then
+            echo 'No live-provider evidence was produced.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          EVIDENCE_PATH="$evidence" python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          import os
+          from pathlib import Path
+
+          evidence = json.loads(Path(os.environ['EVIDENCE_PATH']).read_text(encoding='utf-8'))
+          print('## Protected live-provider federation')
+          print()
+          print(f"Run: `{evidence['run_id']}`")
+          print(f"Bridge sequences: `{evidence['bridge']['message_sequences']}`")
+          print()
+          print('| Turn | Agent | Provider | Upstream model | Posted seq | Latency (ms) |')
+          print('|---:|---|---|---|---:|---:|')
+          for turn in evidence['turns']:
+              print(
+                  f"| {turn['turn']} | `{turn['agent_id']}` | `{turn['provider']}` | "
+                  f"`{turn['upstream_model']}` | {turn['posted_seq']} | {turn['latency_ms']} |"
+              )
+          print()
+          print('No prompt, provider response, or credential value is retained in this summary.')
+          PY
